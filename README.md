@@ -42,6 +42,10 @@ Para rodar localmente: `npx vercel dev` (abrir `index.html` direto no navegador 
 - O PNCP não cobre tudo: estatais (Lei 13.303), parte dos municípios pequenos e processos antigos (Lei 8.666) podem estar ausentes.
 - A API pública pode ficar instável ou limitar requisições. Erros aparecem na tela.
 
+## Meus monitoramentos
+
+Aba onde cada pessoa cadastra até 5 termos (com UF opcional). Ficam salvos no próprio navegador (`localStorage`), sem login nem servidor. Ao abrir a aba, o site consulta o PNCP e marca "Novo" o que foi publicado desde a última visita. Não avisa quem não abrir o site; para aviso por e-mail use os alertas abaixo.
+
 ## Alertas diários
 
 Edite `alerts.json` (`termo` e, opcional, `ufs`). Todo dia às 08:00 (Brasília) uma GitHub Action busca editais **abertos publicados nas últimas 25 h** e abre uma Issue com a lista; o GitHub avisa por e-mail quem acompanha o repositório (Watch → All Activity ou Issues). Rodar na hora: aba Actions → *Alertas de licitações* → Run workflow. Local: `DRY_RUN=1 node scripts/alertas.mjs`; teste: `node scripts/alertas.test.mjs`.

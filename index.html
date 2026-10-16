@@ -8,6 +8,7 @@
   :root{--bg:#f6f7f9;--card:#fff;--tx:#1d2330;--mut:#667085;--bd:#e3e6eb;--pri:#1f5eff;--ok:#0f7b45;--okbg:#e5f6ec;--no:#9a3412;--nobg:#fdeee5;--neu:#475467;--neubg:#eef0f3}
   @media (prefers-color-scheme:dark){:root{--bg:#0f1218;--card:#171b23;--tx:#e6e8ec;--mut:#98a2b3;--bd:#2a303b;--pri:#6d95ff;--ok:#5fd39a;--okbg:#12301f;--no:#f4a77c;--nobg:#3a1f12;--neu:#c0c6d0;--neubg:#252a33}}
   *{box-sizing:border-box}
+  [hidden]{display:none!important}
   body{margin:0;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx)}
   header{padding:20px 16px 8px;max-width:1280px;margin:auto}
   h1{font-size:20px;margin:0 0 4px}
@@ -46,6 +47,8 @@
   .det-c ul{margin:0;padding-left:18px}
   .det-c table{min-width:0;margin-top:4px}
   .btn.mini{padding:2px 8px;font-size:12px}
+  .mlista{grid-column:1/-1;list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+  .mlista li{display:flex;align-items:center;gap:6px;border:1px solid var(--bd);border-radius:999px;padding:3px 4px 3px 12px;background:var(--bg)}
   .vazio{padding:28px;text-align:center;color:var(--mut)}
 </style>
 </head>
@@ -59,7 +62,22 @@
     <button type="button" data-tipo="abertas" class="on">Abertas (recebendo propostas)</button>
     <button type="button" data-tipo="publicadas">Publicadas no período / encerradas</button>
     <button type="button" data-tipo="busca">Busca por palavra-chave</button>
+    <button type="button" data-tipo="monitor">Meus monitoramentos</button>
   </div>
+
+  <section id="mon" hidden>
+    <form id="fm">
+      <label>Termo a monitorar
+        <input id="mTermo" required maxlength="80" placeholder="ex.: oxigênio medicinal">
+      </label>
+      <label>UF
+        <select id="mUf"><option value="">Todas</option></select>
+      </label>
+      <button class="btn" id="mAdd">Adicionar</button>
+      <p class="hint" id="mHint"></p>
+      <ul id="mLista" class="mlista"></ul>
+    </form>
+  </section>
 
   <form id="f">
     <label id="lQ">Palavra-chave
@@ -142,11 +160,13 @@
 const UFS = 'AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO'.split(' ');
 const $ = (id) => document.getElementById(id);
 const ufSel = $('uf');
-UFS.forEach((u) => ufSel.add(new Option(u, u)));
+UFS.forEach((u) => { ufSel.add(new Option(u, u)); $('mUf').add(new Option(u, u)); });
 
 const SEARCH = 'https://pncp.gov.br/api/search/';
 const PNCP = 'https://pncp.gov.br/api/pncp/v1';
 const CAMPOS_URL = ['dataInicial', 'dataFinal', 'uf', 'modalidade', 'tamanhoPagina', 'texto', 'q', 'situacao', 'municipio', 'valorMin', 'valorMax'];
+const MAX_MONITORES = 5;
+const CHAVE_MON = 'pncp.monitores';
 const state = { tipo: 'abertas', pagina: 1, totalPaginas: 0, rows: [] };
 
 // A API do PNCP derruba conexões com frequência; a nova tentativa costuma passar.
@@ -175,6 +195,55 @@ const normalizaBusca = (i) => ({
   ano: i.ano, seq: i.numero_sequencial,
 });
 
+// Monitoramentos ficam só no navegador (localStorage); falha de storage não pode quebrar a página.
+function carregarMon() {
+  try {
+    const m = JSON.parse(localStorage.getItem(CHAVE_MON));
+    if (Array.isArray(m?.termos)) return { termos: m.termos.slice(0, MAX_MONITORES), visto: m.visto || null };
+  } catch { /* storage indisponível ou JSON inválido */ }
+  return { termos: [], visto: null };
+}
+function salvarMon(m) {
+  try { localStorage.setItem(CHAVE_MON, JSON.stringify(m)); } catch { $('mHint').textContent = 'Não foi possível salvar neste navegador.'; }
+}
+
+function renderMon() {
+  const { termos } = carregarMon();
+  const ul = $('mLista'); ul.replaceChildren();
+  termos.forEach((t, idx) => {
+    const li = document.createElement('li');
+    li.append(`${t.termo}${t.ufs ? ' (' + t.ufs + ')' : ''}`);
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn sec mini'; b.textContent = 'remover';
+    b.addEventListener('click', () => {
+      const m = carregarMon(); salvarMon({ ...m, termos: m.termos.filter((_, i) => i !== idx) });
+      renderMon(); buscar();
+    });
+    li.append(b); ul.append(li);
+  });
+  $('mAdd').disabled = termos.length >= MAX_MONITORES;
+  $('mHint').textContent = `${termos.length} de ${MAX_MONITORES} monitoramentos. Salvos neste navegador; mostra o que foi publicado desde a sua última visita (marcado "Novo").`;
+}
+
+async function verificarMonitores() {
+  const m = carregarMon();
+  const vistoMs = m.visto ? Date.parse(m.visto) : 0;
+  const achados = new Map();
+  const avisos = [];
+  for (const t of m.termos) {
+    const p = new URLSearchParams({ q: t.termo, tipos_documento: 'edital', status: 'recebendo_proposta', ordenacao: '-data', pagina: 1, tam_pagina: 50 });
+    if (t.ufs) p.set('ufs', t.ufs);
+    try {
+      for (const i of (await getJson(SEARCH + '?' + p)).items || []) {
+        if (!achados.has(i.numero_controle_pncp)) achados.set(i.numero_controle_pncp, { ...normalizaBusca(i), termo: t.termo, nova: Date.parse(i.data_publicacao_pncp) > vistoMs });
+      }
+    } catch (e) { avisos.push(`"${t.termo}": ${e.message}`); }
+  }
+  if (avisos.length < m.termos.length) salvarMon({ ...m, visto: new Date().toISOString() });
+  const data = [...achados.values()].sort((a, b) => (b.publicacao || '').localeCompare(a.publicacao || ''));
+  return { data, totalRegistros: data.length, totalPaginas: 1, avisos };
+}
+
 function salvarUrl() {
   const p = new URLSearchParams({ tipo: state.tipo, pagina: state.pagina });
   CAMPOS_URL.forEach((c) => { if ($(c).value) p.set(c, $(c).value); });
@@ -184,7 +253,7 @@ function salvarUrl() {
 function restaurarUrl() {
   const p = new URLSearchParams(location.search);
   if (!p.has('tipo')) return false;
-  state.tipo = ['abertas', 'publicadas', 'busca'].includes(p.get('tipo')) ? p.get('tipo') : 'abertas';
+  state.tipo = ['abertas', 'publicadas', 'busca', 'monitor'].includes(p.get('tipo')) ? p.get('tipo') : 'abertas';
   configurarAba();
   CAMPOS_URL.forEach((c) => { if (p.has(c)) $(c).value = p.get(c); });
   state.pagina = Math.max(1, parseInt(p.get('pagina'), 10) || 1);
@@ -201,6 +270,10 @@ const fmtValor = (v) => (v === null || v === undefined || v === 0) ? '—'
 function configurarAba() {
   const pub = state.tipo === 'publicadas';
   const busca = state.tipo === 'busca';
+  const mon = state.tipo === 'monitor';
+  $('f').hidden = mon;
+  $('mon').hidden = !mon;
+  if (mon) renderMon();
   $('lIni').hidden = !pub;
   $('lEnc').hidden = !pub;
   $('lFim').hidden = busca;
@@ -226,8 +299,20 @@ function configurarAba() {
 document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
   state.tipo = b.dataset.tipo; state.pagina = 1; state.rows = []; state.totalPaginas = 0;
   configurarAba(); render(); $('status').textContent = 'Defina os filtros e clique em Buscar.'; $('pgInfo').textContent = '';
+  if (state.tipo === 'monitor' && carregarMon().termos.length) buscar();
 }));
 
+$('fm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const m = carregarMon();
+  const termo = $('mTermo').value.trim();
+  const ufs = $('mUf').value;
+  if (!termo || m.termos.length >= MAX_MONITORES) return;
+  if (m.termos.some((t) => t.termo.toLowerCase() === termo.toLowerCase() && t.ufs === ufs)) { $('mHint').textContent = 'Esse monitoramento já existe.'; return; }
+  salvarMon({ ...m, termos: [...m.termos, { termo, ufs }] });
+  $('mTermo').value = '';
+  renderMon(); buscar();
+});
 $('f').addEventListener('submit', (e) => { e.preventDefault(); state.pagina = 1; buscar(); });
 $('ant').addEventListener('click', () => { if (state.pagina > 1) { state.pagina--; buscar(); } });
 $('prox').addEventListener('click', () => { if (state.pagina < state.totalPaginas) { state.pagina++; buscar(); } });
@@ -269,12 +354,14 @@ async function buscar() {
   $('status').textContent = 'Consultando o PNCP…';
   $('aviso').style.display = 'none';
   try {
-    const j = await (state.tipo === 'busca' ? buscarTexto() : buscarProxy());
+    const j = await ({ busca: buscarTexto, monitor: verificarMonitores }[state.tipo] || buscarProxy)();
     state.rows = j.data;
     state.totalPaginas = j.totalPaginas;
-    $('status').textContent = `${j.totalRegistros.toLocaleString('pt-BR')} registros no PNCP`;
+    $('status').textContent = state.tipo === 'monitor'
+      ? `${j.totalRegistros} editais abertos, ${j.data.filter((r) => r.nova).length} novos desde a última visita`
+      : `${j.totalRegistros.toLocaleString('pt-BR')} registros no PNCP`;
     if (j.avisos && j.avisos.length) {
-      $('aviso').textContent = 'Algumas modalidades falharam e estão faltando nesta página: ' + j.avisos.join(' | ');
+      $('aviso').textContent = 'Algumas consultas falharam e estão faltando: ' + j.avisos.join(' | ');
       $('aviso').style.display = 'block';
     }
   } catch (err) {
@@ -296,6 +383,7 @@ function statusDe(row) {
 }
 
 function filtradas() {
+  if (state.tipo === 'monitor') return state.rows;
   const q = $('texto').value.trim().toLowerCase();
   const soEnc = state.tipo === 'publicadas' && $('soEncerradas').checked;
   const mun = $('municipio').value.trim().toLowerCase();
@@ -326,6 +414,7 @@ function render() {
     const tr = document.createElement('tr');
     const org = td(r.orgao, 'org'); const sm = document.createElement('small'); sm.textContent = r.unidade || ''; org.append(sm);
     const st = statusDe(r); const stc = document.createElement('td'); const tag = document.createElement('span'); tag.className = 'tag ' + st.c; tag.textContent = st.t; stc.append(tag);
+    if (r.nova) { const n = document.createElement('span'); n.className = 'tag ok'; n.textContent = 'Novo'; stc.append(' ', n); }
     const lk = document.createElement('td');
     if (urlSegura(r.linkPncp)) lk.append(link(r.linkPncp, 'PNCP'));
     if (urlSegura(r.linkOrigem)) { if (lk.childNodes.length) lk.append(' · '); lk.append(link(r.linkOrigem, 'Origem')); }
