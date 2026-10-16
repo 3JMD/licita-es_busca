@@ -97,10 +97,10 @@ async function main() {
     }
     await dormir(PAUSA_MS);
   }
-  if (cache.size) gravarCache([...cache.values()], alertas, termosComFalha);
+  if (cache.size || !alertas.length) gravarCache([...cache.values()], alertas, termosComFalha);
   if (urgentes.size) secoes.unshift(`## ⚠️ Encerram em menos de ${DIAS_URGENTE} dias — ${urgentes.size}\n\n${[...urgentes.values()].sort(porPrazo).map((i) => linha(i)).join('\n')}`);
   if (falhas.length) secoes.push(`## Falhas na consulta\n\n${falhas.map((f) => `- ${f}`).join('\n')}`);
-  if (falhas.length === alertas.length) { console.error('Todas as consultas falharam.'); process.exitCode = 1; }
+  if (alertas.length && falhas.length === alertas.length) { console.error('Todas as consultas falharam.'); process.exitCode = 1; }
   if (!secoes.length) { console.log('Nada novo.'); return; }
   const titulo = `Novas licitações — ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
   const corpo = secoes.join('\n\n');

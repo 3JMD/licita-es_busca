@@ -46,6 +46,20 @@ Para rodar localmente: `npx vercel dev` (abrir `index.html` direto no navegador 
 - O PNCP não cobre tudo: estatais (Lei 13.303), parte dos municípios pequenos e processos antigos (Lei 8.666) podem estar ausentes.
 - A API pública pode ficar instável ou limitar requisições. Erros aparecem na tela.
 
+## Configuração inicial (tudo vem vazio)
+
+O projeto não traz termos pré-definidos. Para ativar o cache diário e os alertas, preencha estes arquivos (os formatos):
+
+```json
+// alerts.json: termos dos alertas e da aba Destaques; "ufs" é opcional
+[ { "termo": "seu termo" }, { "termo": "outro termo", "ufs": "RJ" } ]
+
+// itens.json: itens do cache de preços (até 10); "uf" é opcional
+[ { "termo": "nome do item" }, { "termo": "outro item", "uf": "RJ" } ]
+```
+
+Com `alerts.json` vazio, o site abre direto na busca por palavra-chave e a aba Destaques avisa que não há termos. Sem `itens.json`, a aba de preços funciona normalmente, só sem sugestões do cache. Cada usuário também cadastra os próprios termos nas abas *Meus monitoramentos* e *Favoritos* (salvos no navegador).
+
 ## Destaques (cache diário)
 
 A aba inicial lê `data/destaques.json`, gerado pela mesma Action dos alertas: todos os editais abertos dos termos de `alerts.json` (50 mais recentes por termo), com "Novo" para o que saiu nas últimas 25 h. Abre instantaneamente e funciona com o PNCP fora do ar; a lista esconde o que já encerrou entre uma atualização e outra. Se a consulta de um termo falhar na rodada, as linhas dele do cache anterior são mantidas. A Action faz commit do arquivo, e a Vercel republica sozinha.

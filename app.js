@@ -238,7 +238,9 @@ async function buscar() {
     if (tipo !== state.tipo) return; // resposta atrasada de outra aba
     state.rows = j.data;
     state.totalPaginas = j.totalPaginas;
-    $('status').textContent = state.tipo === 'favoritos'
+    $('status').textContent = state.tipo === 'cache' && !j.totalRegistros
+      ? 'Nenhum termo configurado: preencha alerts.json (ou use as outras abas).'
+      : state.tipo === 'favoritos'
       ? `${j.totalRegistros} favoritos`
       : state.tipo === 'cache'
       ? `${j.totalRegistros} editais abertos · atualizado em ${fmtData(j.geradoEm)}${Date.now() - Date.parse(j.geradoEm) > 48 * 3600e3 ? ' (desatualizado: confira a Action)' : ''} · ${j.data.filter((r) => r.nova).length} novos`
@@ -410,6 +412,15 @@ function exportarCsv() {
   baixarCsv(`pncp_${state.tipo}_p${state.pagina}.csv`, cols, filtradas());
 }
 
+// Sem termos configurados o cache fica vazio; nesse caso abre direto na busca por palavra-chave.
+async function abaInicial() {
+  try {
+    const r = await fetch('data/destaques.json', { cache: 'no-cache' });
+    if (r.ok && (await r.json()).rows.length) return 'cache';
+  } catch { /* sem cache */ }
+  return 'busca';
+}
+
 await iniciarPreco({ salvarUrl });
 if (restaurarUrl()) buscar();
-else { state.tipo = 'cache'; configurarAba(); buscar(); }
+else { state.tipo = await abaInicial(); configurarAba(); buscar(); }
