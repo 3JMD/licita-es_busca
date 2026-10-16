@@ -12,7 +12,9 @@ Filtros: UF, modalidade, tamanho de página; município, valor mín./máx. e tex
 ## Estrutura
 
 ```
-index.html      # front-end (HTML + JS puro, sem dependências)
+index.html      # front-end
+normaliza.mjs   # converte item da busca do PNCP (usado pelo site e pela Action)
+data/destaques.json  # cache diário gerado pela Action (HTML + JS puro, sem dependências)
 alerts.json     # termos monitorados pelos alertas
 scripts/alertas.mjs  # consulta diária e abre uma Issue com o que saiu de novo
 .github/workflows/alertas.yml  # agenda (08:00 BRT) e roda o script
@@ -41,6 +43,10 @@ Para rodar localmente: `npx vercel dev` (abrir `index.html` direto no navegador 
 - "Filtrar texto" e "Só encerradas" filtram **apenas a página carregada**. A API do PNCP não tem busca por palavra-chave.
 - O PNCP não cobre tudo: estatais (Lei 13.303), parte dos municípios pequenos e processos antigos (Lei 8.666) podem estar ausentes.
 - A API pública pode ficar instável ou limitar requisições. Erros aparecem na tela.
+
+## Destaques (cache diário)
+
+A aba inicial lê `data/destaques.json`, gerado pela mesma Action dos alertas: todos os editais abertos dos termos de `alerts.json` (50 mais recentes por termo), com "Novo" para o que saiu nas últimas 25 h. Abre instantaneamente e funciona com o PNCP fora do ar; a lista esconde o que já encerrou entre uma atualização e outra. Se a consulta de um termo falhar na rodada, as linhas dele do cache anterior são mantidas. A Action faz commit do arquivo, e a Vercel republica sozinha.
 
 ## Meus monitoramentos
 

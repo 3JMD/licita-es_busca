@@ -1,8 +1,10 @@
 // Consulta a busca do PNCP para cada termo de alerts.json e abre uma Issue com os editais
-// publicados nas últimas HORAS horas (o GitHub avisa por e-mail). DRY_RUN=1 só imprime.
-import { readFileSync } from 'node:fs';
+// publicados nas últimas HORAS horas (o GitHub avisa por e-mail). DRY_RUN=1 não abre a Issue.
+// Também grava data/destaques.json (todos os abertos dos termos), que o site usa como cache.
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { normalizaBusca } from '../normaliza.mjs';
 
 const SEARCH = 'https://pncp.gov.br/api/search/';
 const HORAS = 25; // cron diário + folga
@@ -37,25 +39,42 @@ export function linha(i) {
   return `- [${i.orgao_nome} (${i.municipio_nome}/${i.uf})](${url}) · ${i.modalidade_licitacao_nome}${fim}\n  ${obj}`;
 }
 
+// Termo cuja consulta falhou mantém as linhas do cache anterior (o PNCP oscila).
+function gravarCache(rows, termos, termosComFalha) {
+  const arquivo = new URL('../data/destaques.json', import.meta.url);
+  let antigas = [];
+  try { antigas = JSON.parse(readFileSync(arquivo, 'utf8')).rows.filter((r) => termosComFalha.has(r.termo)); } catch { /* sem cache anterior */ }
+  const ids = new Set(rows.map((r) => r.id));
+  const ordenadas = [...rows, ...antigas.filter((r) => !ids.has(r.id))].sort((a, b) => (b.publicacao || '').localeCompare(a.publicacao || ''));
+  mkdirSync(new URL('../data/', import.meta.url), { recursive: true });
+  writeFileSync(arquivo, JSON.stringify({ geradoEm: new Date().toISOString(), termos, rows: ordenadas }));
+}
+
 async function main() {
   const alertas = JSON.parse(readFileSync(new URL('../alerts.json', import.meta.url), 'utf8'));
   const secoes = [];
   const falhas = [];
   const vistos = new Set();
+  const cache = new Map();
+  const termosComFalha = new Set();
   for (const a of alertas) {
     const p = new URLSearchParams({
       q: a.termo, tipos_documento: 'edital', status: 'recebendo_proposta', ordenacao: '-data', pagina: 1, tam_pagina: 50,
     });
     if (a.ufs) p.set('ufs', a.ufs);
     try {
-      const itens = novos((await getJson(SEARCH + '?' + p)).items || []).filter((i) => !vistos.has(i.id));
+      const todos = (await getJson(SEARCH + '?' + p)).items || [];
+      todos.forEach((i) => { if (!cache.has(i.id)) cache.set(i.id, { ...normalizaBusca(i), termo: a.termo }); });
+      const itens = novos(todos).filter((i) => !vistos.has(i.id));
       itens.forEach((i) => vistos.add(i.id));
       if (itens.length) secoes.push(`## ${a.termo}${a.ufs ? ` (${a.ufs})` : ''} — ${itens.length}\n\n${itens.map(linha).join('\n')}`);
     } catch (e) {
       falhas.push(`${a.termo}: ${e.message}`);
+      termosComFalha.add(a.termo);
     }
     await dormir(PAUSA_MS);
   }
+  if (cache.size) gravarCache([...cache.values()], alertas, termosComFalha);
   if (falhas.length) secoes.push(`## Falhas na consulta\n\n${falhas.map((f) => `- ${f}`).join('\n')}`);
   if (!secoes.length) { console.log('Nada novo.'); return; }
   const titulo = `Novas licitações — ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;

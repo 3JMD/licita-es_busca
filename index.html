@@ -34,6 +34,7 @@
   th{font-size:12px;color:var(--mut);font-weight:600;position:sticky;top:0;background:var(--card)}
   td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
   td.dt{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .mut{color:var(--mut)}
   .obj{max-width:440px}
   .org small{display:block;color:var(--mut)}
   .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;white-space:nowrap}
@@ -60,7 +61,8 @@
 </header>
 <main>
   <div class="tabs" role="tablist">
-    <button type="button" data-tipo="abertas" class="on">Abertas (recebendo propostas)</button>
+    <button type="button" data-tipo="cache">Destaques (atualizado diariamente)</button>
+    <button type="button" data-tipo="abertas">Abertas (recebendo propostas)</button>
     <button type="button" data-tipo="publicadas">Publicadas no período / encerradas</button>
     <button type="button" data-tipo="busca">Busca por palavra-chave</button>
     <button type="button" data-tipo="monitor">Meus monitoramentos</button>
@@ -182,7 +184,9 @@
   </div>
 </main>
 
-<script>
+<script type="module">
+import { normalizaBusca } from './normaliza.mjs';
+
 const UFS = 'AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO'.split(' ');
 const $ = (id) => document.getElementById(id);
 const ufSel = $('uf');
@@ -192,6 +196,7 @@ const SEARCH = 'https://pncp.gov.br/api/search/';
 const PNCP = 'https://pncp.gov.br/api/pncp/v1';
 const CAMPOS_URL = ['dataInicial', 'dataFinal', 'uf', 'modalidade', 'tamanhoPagina', 'texto', 'q', 'situacao', 'municipio', 'pTermo', 'pUf', 'valorMin', 'valorMax'];
 const MAX_MONITORES = 5;
+const HORAS_NOVO = 25;
 const CHAVE_MON = 'pncp.monitores';
 const state = { tipo: 'abertas', pagina: 1, totalPaginas: 0, rows: [] };
 
@@ -211,15 +216,6 @@ async function getJson(url, tentativas = 4) {
   }
   throw erro;
 }
-
-const normalizaBusca = (i) => ({
-  id: i.numero_controle_pncp, orgao: i.orgao_nome, cnpj: i.orgao_cnpj, esfera: i.esfera_id,
-  uf: i.uf, municipio: i.municipio_nome, unidade: i.unidade_nome, modalidade: i.modalidade_licitacao_nome,
-  objeto: i.description, valorEstimado: i.valor_global, valorHomologado: null, situacao: i.situacao_nome,
-  publicacao: i.data_publicacao_pncp, abertura: i.data_inicio_vigencia, encerramento: i.data_fim_vigencia,
-  linkOrigem: null, linkPncp: 'https://pncp.gov.br/app/editais' + i.item_url.replace(/^\/compras/, ''),
-  ano: i.ano, seq: i.numero_sequencial,
-});
 
 // Monitoramentos ficam só no navegador (localStorage); falha de storage não pode quebrar a página.
 function carregarMon() {
@@ -370,7 +366,7 @@ function salvarUrl() {
 function restaurarUrl() {
   const p = new URLSearchParams(location.search);
   if (!p.has('tipo')) return false;
-  state.tipo = ['abertas', 'publicadas', 'busca', 'monitor', 'preco'].includes(p.get('tipo')) ? p.get('tipo') : 'abertas';
+  state.tipo = ['cache', 'abertas', 'publicadas', 'busca', 'monitor', 'preco'].includes(p.get('tipo')) ? p.get('tipo') : 'abertas';
   configurarAba();
   CAMPOS_URL.forEach((c) => { if (p.has(c)) $(c).value = p.get(c); });
   state.pagina = Math.max(1, parseInt(p.get('pagina'), 10) || 1);
@@ -397,17 +393,22 @@ function configurarAba() {
   if (mon) renderMon();
   $('lIni').hidden = !pub;
   $('lEnc').hidden = !pub;
-  $('lFim').hidden = busca;
+  const cache = state.tipo === 'cache';
+  ['modalidade', 'tamanhoPagina'].forEach((id) => { $(id).parentElement.hidden = cache; });
+  $('buscar').hidden = cache;
+  $('lFim').hidden = busca || cache;
   $('lQ').hidden = !busca;
   $('lSt').hidden = !busca;
   $('q').required = busca;
-  $('dataFinal').required = !busca;
+  $('dataFinal').required = !busca && !cache;
   $('dataInicial').required = pub;
   $('lFim').firstChild.textContent = pub ? 'Publicadas até ' : 'Encerram até ';
   if (pub) {
     $('dataInicial').value = iso(addDias(-7));
     $('dataFinal').value = iso(new Date());
     $('hint').textContent = 'Lista o que foi publicado no PNCP no período (abertas e encerradas). Sem modalidade, consulta as 13 em paralelo e junta a página N de cada uma; períodos longos ficam lentos.';
+  } else if (cache) {
+    $('hint').textContent = 'Editais abertos dos termos monitorados pelo site (alerts.json), gravados todo dia pela Action. Abre rápido e funciona mesmo com o PNCP fora do ar; filtros aplicam-se a esta lista.';
   } else if (busca) {
     $('hint').textContent = 'Procura a palavra no texto dos editais de todo o PNCP (busca do próprio portal), mais recentes primeiro. A descrição vem truncada pelo PNCP; use "Detalhes" para ver itens e documentos.';
   } else {
@@ -420,7 +421,7 @@ function configurarAba() {
 document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
   state.tipo = b.dataset.tipo; state.pagina = 1; state.rows = []; state.totalPaginas = 0;
   configurarAba(); render(); $('status').textContent = 'Defina os filtros e clique em Buscar.'; $('pgInfo').textContent = '';
-  if (state.tipo === 'monitor' && carregarMon().termos.length) buscar();
+  if (state.tipo === 'cache' || (state.tipo === 'monitor' && carregarMon().termos.length)) buscar();
 }));
 
 $('fm').addEventListener('submit', (e) => {
@@ -442,6 +443,7 @@ $('ant').addEventListener('click', () => { if (state.pagina > 1) { state.pagina-
 $('prox').addEventListener('click', () => { if (state.pagina < state.totalPaginas) { state.pagina++; buscar(); } });
 ['texto', 'municipio', 'valorMin', 'valorMax'].forEach((c) => $(c).addEventListener('input', render));
 $('soEncerradas').addEventListener('change', render);
+ufSel.addEventListener('change', () => { if (state.tipo === 'cache') render(); });
 $('csv').addEventListener('click', exportarCsv);
 
 async function buscarTexto() {
@@ -454,6 +456,18 @@ async function buscarTexto() {
   if ($('modalidade').value) p.set('modalidades', $('modalidade').value);
   const j = await getJson(SEARCH + '?' + p);
   return { data: (j.items || []).map(normalizaBusca), totalRegistros: j.total || 0, totalPaginas: Math.ceil((j.total || 0) / tam), avisos: [] };
+}
+
+async function carregarCache() {
+  const r = await fetch('data/destaques.json', { cache: 'no-cache' });
+  if (!r.ok) throw new Error('cache indisponível (HTTP ' + r.status + ')');
+  const d = await r.json();
+  const corte = Date.parse(d.geradoEm) - HORAS_NOVO * 3600e3;
+  const agora = Date.now();
+  // Entre uma atualização e outra, esconde o que já encerrou.
+  const data = d.rows.filter((x) => !x.encerramento || Date.parse(x.encerramento) > agora)
+    .map((x) => ({ ...x, nova: Date.parse(x.publicacao) > corte }));
+  return { data, totalRegistros: data.length, totalPaginas: 0, avisos: [], geradoEm: d.geradoEm };
 }
 
 async function buscarProxy() {
@@ -478,11 +492,15 @@ async function buscar() {
   $('buscar').disabled = true;
   $('status').textContent = 'Consultando o PNCP…';
   $('aviso').style.display = 'none';
+  const tipo = state.tipo;
   try {
-    const j = await ({ busca: buscarTexto, monitor: verificarMonitores }[state.tipo] || buscarProxy)();
+    const j = await ({ busca: buscarTexto, monitor: verificarMonitores, cache: carregarCache }[state.tipo] || buscarProxy)();
+    if (tipo !== state.tipo) return; // resposta atrasada de outra aba
     state.rows = j.data;
     state.totalPaginas = j.totalPaginas;
-    $('status').textContent = state.tipo === 'monitor'
+    $('status').textContent = state.tipo === 'cache'
+      ? `${j.totalRegistros} editais abertos · atualizado em ${fmtData(j.geradoEm)}${Date.now() - Date.parse(j.geradoEm) > 48 * 3600e3 ? ' (desatualizado: confira a Action)' : ''} · ${j.data.filter((r) => r.nova).length} novos`
+      : state.tipo === 'monitor'
       ? `${j.totalRegistros} editais abertos, ${j.data.filter((r) => r.nova).length} novos desde a última visita`
       : `${j.totalRegistros.toLocaleString('pt-BR')} registros no PNCP`;
     if (j.avisos && j.avisos.length) {
@@ -490,6 +508,7 @@ async function buscar() {
       $('aviso').style.display = 'block';
     }
   } catch (err) {
+    if (tipo !== state.tipo) return;
     state.rows = []; state.totalPaginas = 0;
     $('status').textContent = '';
     $('aviso').textContent = 'Falha na consulta: ' + err.message;
@@ -516,6 +535,7 @@ function filtradas() {
   const vMax = $('valorMax').value === '' ? null : Number($('valorMax').value);
   return state.rows.filter((r) => {
     if (soEnc && statusDe(r).t !== 'Encerrada') return false;
+    if (state.tipo === 'cache' && ufSel.value && r.uf !== ufSel.value) return false;
     if (mun && !(r.municipio || '').toLowerCase().includes(mun)) return false;
     if ((vMin !== null || vMax !== null) && !r.valorEstimado) return false;
     if (vMin !== null && r.valorEstimado < vMin) return false;
@@ -528,6 +548,12 @@ function filtradas() {
 function td(text, cls) { const c = document.createElement('td'); if (cls) c.className = cls; c.textContent = text ?? '—'; return c; }
 function link(href, txt) { const a = document.createElement('a'); a.href = href; a.textContent = txt; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; }
 const urlSegura = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
+
+function objeto(r) {
+  const c = td(r.objeto, 'obj');
+  if (r.termo) { const sm = document.createElement('small'); sm.className = 'mut'; sm.textContent = ' ↳ ' + r.termo; c.append(sm); }
+  return c;
+}
 
 function render() {
   const tb = $('tb'); tb.replaceChildren();
@@ -550,7 +576,7 @@ function render() {
       if (lk.childNodes.length) lk.append(' · ');
       lk.append(b);
     }
-    tr.append(org, td(`${r.uf || ''} / ${r.municipio || ''}`), td(r.modalidade), td(r.objeto, 'obj'),
+    tr.append(org, td(`${r.uf || ''} / ${r.municipio || ''}`), td(r.modalidade), objeto(r),
       td(fmtValor(r.valorEstimado), 'num'), td(fmtData(r.publicacao), 'dt'), td(fmtData(r.encerramento), 'dt'), stc, lk);
     tb.append(tr);
   }
@@ -609,8 +635,8 @@ function baixarCsv(nome, cols, rows) {
   a.download = nome; a.click(); URL.revokeObjectURL(a.href);
 }
 
-configurarAba();
 if (restaurarUrl()) buscar();
+else { state.tipo = 'cache'; configurarAba(); buscar(); }
 </script>
 </body>
 </html>
