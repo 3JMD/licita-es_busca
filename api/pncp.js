@@ -33,6 +33,7 @@ function enxugar(d) {
     id: d.numeroControlePNCP,
     ano: d.anoCompra,
     seq: d.sequencialCompra,
+    srp: d.srp,
     orgao: o.razaoSocial,
     cnpj: o.cnpj,
     esfera: o.esferaId, // F, E, M, D (distrital), N (não se aplica)

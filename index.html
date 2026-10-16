@@ -51,6 +51,16 @@
   .mlista{grid-column:1/-1;list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
   .mlista li{display:flex;align-items:center;gap:6px;border:1px solid var(--bd);border-radius:999px;padding:3px 4px 3px 12px;background:var(--bg)}
   #pSum{white-space:pre-line;margin:4px 0 10px}
+  th[data-sort]{cursor:pointer;user-select:none}
+  th[data-sort]::after{content:attr(data-dir)}
+  .urg{color:var(--no);font-weight:600}
+  tr.dim{opacity:.5}
+  .favctl{display:flex;gap:6px;margin-top:6px}
+  .favctl input{flex:1}
+  .chips{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
+  details.lote{margin:16px 0;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 14px}
+  details.lote form{display:grid;gap:10px;margin:10px 0;border:0;padding:0;grid-template-columns:1fr auto auto;align-items:end}
+  textarea{font:inherit;padding:7px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);resize:vertical}
   .vazio{padding:28px;text-align:center;color:var(--mut)}
 </style>
 </head>
@@ -67,6 +77,7 @@
     <button type="button" data-tipo="busca">Busca por palavra-chave</button>
     <button type="button" data-tipo="monitor">Meus monitoramentos</button>
     <button type="button" data-tipo="preco">Preço de referência</button>
+    <button type="button" data-tipo="favoritos">Favoritos</button>
   </div>
 
   <section id="mon" hidden>
@@ -78,6 +89,7 @@
         <select id="mUf"><option value="">Todas</option></select>
       </label>
       <button class="btn" id="mAdd">Adicionar</button>
+      <button type="button" class="btn sec" id="mSaude">+ Pacote Saúde</button>
       <p class="hint" id="mHint"></p>
       <ul id="mLista" class="mlista"></ul>
     </form>
@@ -86,13 +98,15 @@
   <section id="pre" hidden>
     <form id="fp">
       <label>Item (descrição)
-        <input id="pTermo" required maxlength="80" placeholder="ex.: dipirona sódica 500 mg">
+        <input id="pTermo" required maxlength="80" list="pItens" placeholder="ex.: dipirona sódica 500 mg">
+        <datalist id="pItens"></datalist>
       </label>
       <label>UF
         <select id="pUf"><option value="">Todas</option></select>
       </label>
       <button class="btn" id="pBtn">Pesquisar preços</button>
-      <p class="hint">Busca atas de registro de preços e lista o <b>valor unitário homologado</b>, o fornecedor e o órgão dos itens que contêm todas as palavras digitadas (até 15 atas mais recentes). Confira sempre a unidade/apresentação: "caixa" e "ampola" não se comparam.</p>
+      <button type="button" class="btn sec" id="pLive">Atualizar ao vivo</button>
+      <p class="hint">Busca atas de registro de preços e lista o <b>valor unitário homologado</b>, o fornecedor e o órgão dos itens que contêm todas as palavras digitadas (até 15 atas mais recentes). Itens da lista sugerida (<code>itens.json</code>) abrem do cache diário; "Atualizar ao vivo" consulta o PNCP agora. Confira sempre a unidade/apresentação: "caixa" e "ampola" não se comparam.</p>
     </form>
     <div class="bar">
       <span class="status" id="pStatus"></span>
@@ -105,6 +119,23 @@
         <tbody id="pTb"></tbody>
       </table>
     </div>
+    <details class="lote">
+      <summary>Pesquisar uma lista de itens (um por linha, até 20)</summary>
+      <form id="fl">
+        <label>Itens
+          <textarea id="lTexto" rows="6" placeholder="dipirona sódica 500 mg&#10;soro fisiológico 0,9% 500 ml"></textarea>
+        </label>
+        <button class="btn" id="lBtn">Pesquisar lista</button>
+        <button type="button" class="btn sec" id="lCsv" disabled>Exportar CSV</button>
+      </form>
+      <p id="lStatus" class="status"></p>
+      <div class="wrap">
+        <table>
+          <thead><tr><th>Item pesquisado</th><th>Unidade</th><th>Preços</th><th>Mín.</th><th>Mediana</th><th>Máx.</th><th>Menor preço: fornecedor — órgão</th></tr></thead>
+          <tbody id="lTb"></tbody>
+        </table>
+      </div>
+    </details>
   </section>
 
   <form id="f">
@@ -156,9 +187,14 @@
     <label>Valor máx. R$ (nesta página)
       <input type="number" id="valorMax" min="0" step="any">
     </label>
+    <label id="lFav">Status do favorito
+      <select id="favStatus"><option value="">Todos</option><option>acompanhar</option><option>participar</option><option>descartar</option></select>
+    </label>
+    <label class="chk" id="lSrp" hidden><input type="checkbox" id="soSrp"> Só registro de preços (SRP, nesta página)</label>
     <label class="chk" id="lEnc" hidden><input type="checkbox" id="soEncerradas"> Só encerradas (nesta página)</label>
     <button class="btn" id="buscar">Buscar</button>
     <p class="hint" id="hint"></p>
+    <div class="chips" id="chips" hidden></div>
   </form>
 
   <div class="aviso" id="aviso"></div>
@@ -177,466 +213,13 @@
     <table>
       <thead><tr>
         <th>Órgão</th><th>UF / Município</th><th>Modalidade</th><th>Objeto</th>
-        <th>Valor estimado</th><th>Publicação</th><th>Encerramento</th><th>Status</th><th>Links</th>
+        <th data-sort="valorEstimado">Valor estimado</th><th data-sort="publicacao">Publicação</th><th data-sort="encerramento">Encerramento</th><th>Status</th><th>Links</th>
       </tr></thead>
       <tbody id="tb"><tr><td colspan="9" class="vazio">Nenhuma consulta ainda.</td></tr></tbody>
     </table>
   </div>
 </main>
 
-<script type="module">
-import { normalizaBusca } from './normaliza.mjs';
-
-const UFS = 'AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO'.split(' ');
-const $ = (id) => document.getElementById(id);
-const ufSel = $('uf');
-UFS.forEach((u) => { ufSel.add(new Option(u, u)); $('mUf').add(new Option(u, u)); $('pUf').add(new Option(u, u)); });
-
-const SEARCH = 'https://pncp.gov.br/api/search/';
-const PNCP = 'https://pncp.gov.br/api/pncp/v1';
-const CAMPOS_URL = ['dataInicial', 'dataFinal', 'uf', 'modalidade', 'tamanhoPagina', 'texto', 'q', 'situacao', 'municipio', 'pTermo', 'pUf', 'valorMin', 'valorMax'];
-const MAX_MONITORES = 5;
-const HORAS_NOVO = 25;
-const CHAVE_MON = 'pncp.monitores';
-const state = { tipo: 'abertas', pagina: 1, totalPaginas: 0, rows: [] };
-
-// A API do PNCP derruba conexões com frequência; a nova tentativa costuma passar.
-async function getJson(url, tentativas = 4) {
-  let erro;
-  for (let i = 0; i < tentativas; i++) {
-    try {
-      const r = await fetch(url);
-      if (r.status === 204) return null;
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return await r.json();
-    } catch (e) {
-      erro = e;
-      await new Promise((ok) => setTimeout(ok, 600 * (i + 1)));
-    }
-  }
-  throw erro;
-}
-
-// Monitoramentos ficam só no navegador (localStorage); falha de storage não pode quebrar a página.
-function carregarMon() {
-  try {
-    const m = JSON.parse(localStorage.getItem(CHAVE_MON));
-    if (Array.isArray(m?.termos)) return { termos: m.termos.slice(0, MAX_MONITORES), visto: m.visto || null };
-  } catch { /* storage indisponível ou JSON inválido */ }
-  return { termos: [], visto: null };
-}
-function salvarMon(m) {
-  try { localStorage.setItem(CHAVE_MON, JSON.stringify(m)); } catch { $('mHint').textContent = 'Não foi possível salvar neste navegador.'; }
-}
-
-function renderMon() {
-  const { termos } = carregarMon();
-  const ul = $('mLista'); ul.replaceChildren();
-  termos.forEach((t, idx) => {
-    const li = document.createElement('li');
-    li.append(`${t.termo}${t.ufs ? ' (' + t.ufs + ')' : ''}`);
-    const b = document.createElement('button');
-    b.type = 'button'; b.className = 'btn sec mini'; b.textContent = 'remover';
-    b.addEventListener('click', () => {
-      const m = carregarMon(); salvarMon({ ...m, termos: m.termos.filter((_, i) => i !== idx) });
-      renderMon(); buscar();
-    });
-    li.append(b); ul.append(li);
-  });
-  $('mAdd').disabled = termos.length >= MAX_MONITORES;
-  $('mHint').textContent = `${termos.length} de ${MAX_MONITORES} monitoramentos. Salvos neste navegador; mostra o que foi publicado desde a sua última visita (marcado "Novo").`;
-}
-
-async function verificarMonitores() {
-  const m = carregarMon();
-  const vistoMs = m.visto ? Date.parse(m.visto) : 0;
-  const achados = new Map();
-  const avisos = [];
-  for (const t of m.termos) {
-    const p = new URLSearchParams({ q: t.termo, tipos_documento: 'edital', status: 'recebendo_proposta', ordenacao: '-data', pagina: 1, tam_pagina: 50 });
-    if (t.ufs) p.set('ufs', t.ufs);
-    try {
-      for (const i of (await getJson(SEARCH + '?' + p)).items || []) {
-        if (!achados.has(i.numero_controle_pncp)) achados.set(i.numero_controle_pncp, { ...normalizaBusca(i), termo: t.termo, nova: Date.parse(i.data_publicacao_pncp) > vistoMs });
-      }
-    } catch (e) { avisos.push(`"${t.termo}": ${e.message}`); }
-  }
-  if (avisos.length < m.termos.length) salvarMon({ ...m, visto: new Date().toISOString() });
-  const data = [...achados.values()].sort((a, b) => (b.publicacao || '').localeCompare(a.publicacao || ''));
-  return { data, totalRegistros: data.length, totalPaginas: 1, avisos };
-}
-
-// Preço de referência: ata -> itens da compra -> resultados (valor unitário homologado).
-const ATAS_POR_BUSCA = 15;
-const ITENS_POR_ATA = 50;
-const MAX_ITENS_POR_ATA = 5;
-const PARALELO = 3;
-let precos = [];
-
-const norm = (t) => t.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
-const casa = (descricao, palavras) => { const d = norm(descricao || ''); return palavras.every((w) => d.includes(w)); };
-const fmtUnit = (v) => v == null ? '—' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 });
-
-function resumo(valores) {
-  const s = [...valores].sort((a, b) => a - b);
-  const m = s.length >> 1;
-  return { n: s.length, min: s[0], max: s[s.length - 1], mediana: s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2, media: s.reduce((a, b) => a + b, 0) / s.length };
-}
-
-async function emLotes(lista, n, fn) {
-  let i = 0;
-  await Promise.all(Array.from({ length: n }, async () => { while (i < lista.length) await fn(lista[i++]); }));
-}
-
-async function precosDaAta(a, palavras, juntar) {
-  const [, , cnpj, ano, seq] = a.item_url.split('/');
-  const base = `${PNCP}/orgaos/${cnpj}/compras/${ano}/${seq}`;
-  const itens = (await getJson(`${base}/itens?pagina=1&tamanhoPagina=${ITENS_POR_ATA}`)) || [];
-  const alvo = itens.filter((i) => i.temResultado && casa(i.descricao, palavras)).slice(0, MAX_ITENS_POR_ATA);
-  for (const i of alvo) {
-    const res = (await getJson(`${base}/itens/${i.numeroItem}/resultados`)) || [];
-    res.filter((r) => !r.dataCancelamento && r.valorUnitarioHomologado > 0).forEach((r) => juntar({
-      item: i.descricao, unidade: i.unidadeMedida, valorUnitario: r.valorUnitarioHomologado, quantidade: r.quantidadeHomologada,
-      fornecedor: r.nomeRazaoSocialFornecedor, orgao: a.orgao_nome, uf: a.uf, municipio: a.municipio_nome,
-      data: r.dataResultado, link: `https://pncp.gov.br/app/editais/${cnpj}/${ano}/${seq}`,
-    }));
-  }
-}
-
-function renderPreco() {
-  const tb = $('pTb'); tb.replaceChildren();
-  for (const r of precos) {
-    const tr = document.createElement('tr');
-    const lk = document.createElement('td'); if (urlSegura(r.link)) lk.append(link(r.link, 'PNCP'));
-    tr.append(td(r.item, 'obj'), td(r.unidade), td(fmtUnit(r.valorUnitario), 'num'), td(r.quantidade?.toLocaleString('pt-BR'), 'num'),
-      td(r.fornecedor), td(`${r.orgao || ''} (${r.municipio || ''}/${r.uf || ''})`), td(fmtData(r.data), 'dt'), lk);
-    tb.append(tr);
-  }
-  if (!precos.length) { $('pSum').textContent = ''; $('pCsv').disabled = true; return; }
-  // Unidades diferentes (comprimido, frasco, ampola…) não se comparam: um resumo por unidade.
-  const grupos = Object.groupBy(precos, (r) => norm((r.unidade || 'sem unidade').trim()));
-  $('pSum').textContent = Object.values(grupos).sort((a, b) => b.length - a.length).map((g) => {
-    const x = resumo(g.map((r) => r.valorUnitario));
-    return `${g[0].unidade || 'sem unidade'}: ${x.n} ${x.n === 1 ? 'preço' : 'preços'} — mín. ${fmtUnit(x.min)} · mediana ${fmtUnit(x.mediana)} · média ${fmtUnit(x.media)} · máx. ${fmtUnit(x.max)}`;
-  }).join('\n');
-  $('pCsv').disabled = false;
-}
-
-async function pesquisarPreco() {
-  const termo = $('pTermo').value.trim();
-  if (!termo) return;
-  salvarUrl();
-  const palavras = norm(termo).split(/\s+/).filter(Boolean);
-  precos = []; renderPreco();
-  $('pBtn').disabled = true; $('aviso').style.display = 'none';
-  $('pStatus').textContent = 'Buscando atas…';
-  const p = new URLSearchParams({ q: termo, tipos_documento: 'ata', ordenacao: '-data', pagina: 1, tam_pagina: ATAS_POR_BUSCA });
-  if ($('pUf').value) p.set('ufs', $('pUf').value);
-  try {
-    // Várias atas podem vir da mesma compra; consultar a compra uma vez só.
-    const compras = new Set();
-    const atas = ((await getJson(SEARCH + '?' + p)).items || []).filter((a) => {
-      const compra = a.item_url.split('/').slice(2, 5).join('/');
-      if (a.cancelado || compras.has(compra)) return false;
-      compras.add(compra); return true;
-    });
-    let feitas = 0; let falhas = 0;
-    await emLotes(atas, PARALELO, async (a) => {
-      try { await precosDaAta(a, palavras, (r) => { precos = [...precos, r]; renderPreco(); }); } catch { falhas++; }
-      feitas++; $('pStatus').textContent = `Consultando atas… ${feitas} de ${atas.length}`;
-    });
-    precos = [...precos].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
-    renderPreco();
-    $('pStatus').textContent = `${atas.length} atas consultadas${falhas ? `, ${falhas} falharam` : ''}.`
-      + (precos.length ? '' : ' Nenhum item homologado com todas as palavras; tente menos palavras.');
-  } catch (err) {
-    $('pStatus').textContent = '';
-    $('aviso').textContent = 'Falha na consulta: ' + err.message; $('aviso').style.display = 'block';
-  } finally {
-    $('pBtn').disabled = false;
-  }
-}
-
-function salvarUrl() {
-  const p = new URLSearchParams({ tipo: state.tipo, pagina: state.pagina });
-  CAMPOS_URL.forEach((c) => { if ($(c).value) p.set(c, $(c).value); });
-  history.replaceState(null, '', '?' + p);
-}
-
-function restaurarUrl() {
-  const p = new URLSearchParams(location.search);
-  if (!p.has('tipo')) return false;
-  state.tipo = ['cache', 'abertas', 'publicadas', 'busca', 'monitor', 'preco'].includes(p.get('tipo')) ? p.get('tipo') : 'abertas';
-  configurarAba();
-  CAMPOS_URL.forEach((c) => { if (p.has(c)) $(c).value = p.get(c); });
-  state.pagina = Math.max(1, parseInt(p.get('pagina'), 10) || 1);
-  return true;
-}
-
-const iso = (d) => d.toISOString().slice(0, 10);
-const addDias = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d; };
-const paraApi = (v) => v.replaceAll('-', '');
-const fmtData = (s) => s ? new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
-const fmtValor = (v) => (v === null || v === undefined || v === 0) ? '—'
-  : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-function configurarAba() {
-  const pub = state.tipo === 'publicadas';
-  const busca = state.tipo === 'busca';
-  const mon = state.tipo === 'monitor';
-  const preco = state.tipo === 'preco';
-  $('f').hidden = mon || preco;
-  $('mon').hidden = !mon;
-  $('pre').hidden = !preco;
-  $('barra').hidden = preco;
-  $('tabela').hidden = preco;
-  if (mon) renderMon();
-  $('lIni').hidden = !pub;
-  $('lEnc').hidden = !pub;
-  const cache = state.tipo === 'cache';
-  ['modalidade', 'tamanhoPagina'].forEach((id) => { $(id).parentElement.hidden = cache; });
-  $('buscar').hidden = cache;
-  $('lFim').hidden = busca || cache;
-  $('lQ').hidden = !busca;
-  $('lSt').hidden = !busca;
-  $('q').required = busca;
-  $('dataFinal').required = !busca && !cache;
-  $('dataInicial').required = pub;
-  $('lFim').firstChild.textContent = pub ? 'Publicadas até ' : 'Encerram até ';
-  if (pub) {
-    $('dataInicial').value = iso(addDias(-7));
-    $('dataFinal').value = iso(new Date());
-    $('hint').textContent = 'Lista o que foi publicado no PNCP no período (abertas e encerradas). Sem modalidade, consulta as 13 em paralelo e junta a página N de cada uma; períodos longos ficam lentos.';
-  } else if (cache) {
-    $('hint').textContent = 'Editais abertos dos termos monitorados pelo site (alerts.json), gravados todo dia pela Action. Abre rápido e funciona mesmo com o PNCP fora do ar; filtros aplicam-se a esta lista.';
-  } else if (busca) {
-    $('hint').textContent = 'Procura a palavra no texto dos editais de todo o PNCP (busca do próprio portal), mais recentes primeiro. A descrição vem truncada pelo PNCP; use "Detalhes" para ver itens e documentos.';
-  } else {
-    $('dataFinal').value = iso(addDias(30));
-    $('hint').textContent = 'Lista contratações com recebimento de propostas em aberto e encerramento até a data escolhida.';
-  }
-  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tipo === state.tipo));
-}
-
-document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
-  state.tipo = b.dataset.tipo; state.pagina = 1; state.rows = []; state.totalPaginas = 0;
-  configurarAba(); render(); $('status').textContent = 'Defina os filtros e clique em Buscar.'; $('pgInfo').textContent = '';
-  if (state.tipo === 'cache' || (state.tipo === 'monitor' && carregarMon().termos.length)) buscar();
-}));
-
-$('fm').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const m = carregarMon();
-  const termo = $('mTermo').value.trim();
-  const ufs = $('mUf').value;
-  if (!termo || m.termos.length >= MAX_MONITORES) return;
-  if (m.termos.some((t) => t.termo.toLowerCase() === termo.toLowerCase() && t.ufs === ufs)) { $('mHint').textContent = 'Esse monitoramento já existe.'; return; }
-  salvarMon({ ...m, termos: [...m.termos, { termo, ufs }] });
-  $('mTermo').value = '';
-  renderMon(); buscar();
-});
-$('fp').addEventListener('submit', (e) => { e.preventDefault(); pesquisarPreco(); });
-$('pCsv').addEventListener('click', () => baixarCsv('pncp_precos.csv',
-  ['item', 'unidade', 'valorUnitario', 'quantidade', 'fornecedor', 'orgao', 'municipio', 'uf', 'data', 'link'], precos));
-$('f').addEventListener('submit', (e) => { e.preventDefault(); state.pagina = 1; buscar(); });
-$('ant').addEventListener('click', () => { if (state.pagina > 1) { state.pagina--; buscar(); } });
-$('prox').addEventListener('click', () => { if (state.pagina < state.totalPaginas) { state.pagina++; buscar(); } });
-['texto', 'municipio', 'valorMin', 'valorMax'].forEach((c) => $(c).addEventListener('input', render));
-$('soEncerradas').addEventListener('change', render);
-ufSel.addEventListener('change', () => { if (state.tipo === 'cache') render(); });
-$('csv').addEventListener('click', exportarCsv);
-
-async function buscarTexto() {
-  const tam = Number($('tamanhoPagina').value);
-  const p = new URLSearchParams({
-    q: $('q').value.trim(), tipos_documento: 'edital', status: $('situacao').value,
-    ordenacao: '-data', pagina: state.pagina, tam_pagina: tam,
-  });
-  if (ufSel.value) p.set('ufs', ufSel.value);
-  if ($('modalidade').value) p.set('modalidades', $('modalidade').value);
-  const j = await getJson(SEARCH + '?' + p);
-  return { data: (j.items || []).map(normalizaBusca), totalRegistros: j.total || 0, totalPaginas: Math.ceil((j.total || 0) / tam), avisos: [] };
-}
-
-async function carregarCache() {
-  const r = await fetch('data/destaques.json', { cache: 'no-cache' });
-  if (!r.ok) throw new Error('cache indisponível (HTTP ' + r.status + ')');
-  const d = await r.json();
-  const corte = Date.parse(d.geradoEm) - HORAS_NOVO * 3600e3;
-  const agora = Date.now();
-  // Entre uma atualização e outra, esconde o que já encerrou.
-  const data = d.rows.filter((x) => !x.encerramento || Date.parse(x.encerramento) > agora)
-    .map((x) => ({ ...x, nova: Date.parse(x.publicacao) > corte }));
-  return { data, totalRegistros: data.length, totalPaginas: 0, avisos: [], geradoEm: d.geradoEm };
-}
-
-async function buscarProxy() {
-  const p = new URLSearchParams({
-    tipo: state.tipo,
-    dataFinal: paraApi($('dataFinal').value),
-    pagina: state.pagina,
-    tamanhoPagina: $('tamanhoPagina').value,
-  });
-  if (state.tipo === 'publicadas') p.set('dataInicial', paraApi($('dataInicial').value));
-  if (ufSel.value) p.set('uf', ufSel.value);
-  if ($('modalidade').value) p.set('modalidade', $('modalidade').value);
-  const r = await fetch('/api/pncp?' + p);
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.erro || 'Erro ' + r.status);
-  return j;
-}
-
-async function buscar() {
-  if (state.tipo === 'preco') return pesquisarPreco();
-  salvarUrl();
-  $('buscar').disabled = true;
-  $('status').textContent = 'Consultando o PNCP…';
-  $('aviso').style.display = 'none';
-  const tipo = state.tipo;
-  try {
-    const j = await ({ busca: buscarTexto, monitor: verificarMonitores, cache: carregarCache }[state.tipo] || buscarProxy)();
-    if (tipo !== state.tipo) return; // resposta atrasada de outra aba
-    state.rows = j.data;
-    state.totalPaginas = j.totalPaginas;
-    $('status').textContent = state.tipo === 'cache'
-      ? `${j.totalRegistros} editais abertos · atualizado em ${fmtData(j.geradoEm)}${Date.now() - Date.parse(j.geradoEm) > 48 * 3600e3 ? ' (desatualizado: confira a Action)' : ''} · ${j.data.filter((r) => r.nova).length} novos`
-      : state.tipo === 'monitor'
-      ? `${j.totalRegistros} editais abertos, ${j.data.filter((r) => r.nova).length} novos desde a última visita`
-      : `${j.totalRegistros.toLocaleString('pt-BR')} registros no PNCP`;
-    if (j.avisos && j.avisos.length) {
-      $('aviso').textContent = 'Algumas consultas falharam e estão faltando: ' + j.avisos.join(' | ');
-      $('aviso').style.display = 'block';
-    }
-  } catch (err) {
-    if (tipo !== state.tipo) return;
-    state.rows = []; state.totalPaginas = 0;
-    $('status').textContent = '';
-    $('aviso').textContent = 'Falha na consulta: ' + err.message;
-    $('aviso').style.display = 'block';
-  } finally {
-    $('buscar').disabled = false;
-    render();
-  }
-}
-
-function statusDe(row) {
-  const s = (row.situacao || '').toLowerCase();
-  if (s.includes('revogada') || s.includes('anulada') || s.includes('suspensa')) return { t: row.situacao, c: 'no' };
-  if (!row.encerramento) return { t: row.situacao || '—', c: 'neu' };
-  return new Date(row.encerramento) > new Date() ? { t: 'Aberta', c: 'ok' } : { t: 'Encerrada', c: 'neu' };
-}
-
-function filtradas() {
-  if (state.tipo === 'monitor') return state.rows;
-  const q = $('texto').value.trim().toLowerCase();
-  const soEnc = state.tipo === 'publicadas' && $('soEncerradas').checked;
-  const mun = $('municipio').value.trim().toLowerCase();
-  const vMin = $('valorMin').value === '' ? null : Number($('valorMin').value);
-  const vMax = $('valorMax').value === '' ? null : Number($('valorMax').value);
-  return state.rows.filter((r) => {
-    if (soEnc && statusDe(r).t !== 'Encerrada') return false;
-    if (state.tipo === 'cache' && ufSel.value && r.uf !== ufSel.value) return false;
-    if (mun && !(r.municipio || '').toLowerCase().includes(mun)) return false;
-    if ((vMin !== null || vMax !== null) && !r.valorEstimado) return false;
-    if (vMin !== null && r.valorEstimado < vMin) return false;
-    if (vMax !== null && r.valorEstimado > vMax) return false;
-    if (!q) return true;
-    return [r.orgao, r.objeto, r.municipio, r.unidade, r.modalidade].join(' ').toLowerCase().includes(q);
-  });
-}
-
-function td(text, cls) { const c = document.createElement('td'); if (cls) c.className = cls; c.textContent = text ?? '—'; return c; }
-function link(href, txt) { const a = document.createElement('a'); a.href = href; a.textContent = txt; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; }
-const urlSegura = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
-
-function objeto(r) {
-  const c = td(r.objeto, 'obj');
-  if (r.termo) { const sm = document.createElement('small'); sm.className = 'mut'; sm.textContent = ' ↳ ' + r.termo; c.append(sm); }
-  return c;
-}
-
-function render() {
-  const tb = $('tb'); tb.replaceChildren();
-  const rows = filtradas();
-  if (!rows.length) {
-    const tr = document.createElement('tr'); const c = td(state.rows.length ? 'Nenhum resultado com esse filtro nesta página.' : 'Nenhum resultado.', 'vazio'); c.colSpan = 9; tr.append(c); tb.append(tr);
-  }
-  for (const r of rows) {
-    const tr = document.createElement('tr');
-    const org = td(r.orgao, 'org'); const sm = document.createElement('small'); sm.textContent = r.unidade || ''; org.append(sm);
-    const st = statusDe(r); const stc = document.createElement('td'); const tag = document.createElement('span'); tag.className = 'tag ' + st.c; tag.textContent = st.t; stc.append(tag);
-    if (r.nova) { const n = document.createElement('span'); n.className = 'tag ok'; n.textContent = 'Novo'; stc.append(' ', n); }
-    const lk = document.createElement('td');
-    if (urlSegura(r.linkPncp)) lk.append(link(r.linkPncp, 'PNCP'));
-    if (urlSegura(r.linkOrigem)) { if (lk.childNodes.length) lk.append(' · '); lk.append(link(r.linkOrigem, 'Origem')); }
-    if (r.cnpj && r.ano && r.seq) {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'btn sec mini'; b.textContent = 'Detalhes';
-      b.addEventListener('click', () => alternarDetalhes(tr, r));
-      if (lk.childNodes.length) lk.append(' · ');
-      lk.append(b);
-    }
-    tr.append(org, td(`${r.uf || ''} / ${r.municipio || ''}`), td(r.modalidade), objeto(r),
-      td(fmtValor(r.valorEstimado), 'num'), td(fmtData(r.publicacao), 'dt'), td(fmtData(r.encerramento), 'dt'), stc, lk);
-    tb.append(tr);
-  }
-  $('pgInfo').textContent = state.totalPaginas ? `Página ${state.pagina} de ${state.totalPaginas.toLocaleString('pt-BR')}` : '';
-  $('ant').disabled = state.pagina <= 1;
-  $('prox').disabled = state.pagina >= state.totalPaginas;
-  $('csv').disabled = !rows.length;
-}
-
-function montarDetalhes(itens, arquivos) {
-  const box = document.createElement('div');
-  const h = (t) => { const e = document.createElement('h3'); e.textContent = t; return e; };
-  box.append(h('Documentos'));
-  const ul = document.createElement('ul');
-  arquivos.filter((a) => a.statusAtivo && urlSegura(a.url)).forEach((a) => {
-    const li = document.createElement('li');
-    li.append(link(a.url, a.titulo || 'arquivo'), ` (${a.tipoDocumentoNome || 'documento'})`);
-    ul.append(li);
-  });
-  box.append(ul.childElementCount ? ul : Object.assign(document.createElement('span'), { textContent: 'Nenhum documento publicado.' }));
-  box.append(h(itens.length >= 50 ? 'Itens (primeiros 50)' : `Itens (${itens.length})`));
-  const t = document.createElement('table');
-  const cab = t.createTHead().insertRow();
-  ['Nº', 'Descrição', 'Qtde', 'Un.', 'Valor unit.', 'Total'].forEach((x) => { const th = document.createElement('th'); th.textContent = x; cab.append(th); });
-  const tb = t.createTBody();
-  itens.forEach((i) => tb.insertRow().append(td(i.numeroItem), td(i.descricao), td(i.quantidade, 'num'), td(i.unidadeMedida),
-    td(fmtValor(i.valorUnitarioEstimado), 'num'), td(fmtValor(i.valorTotal), 'num')));
-  box.append(t);
-  return box;
-}
-
-async function alternarDetalhes(tr, r) {
-  const prox = tr.nextElementSibling;
-  if (prox?.classList.contains('det')) { prox.remove(); return; }
-  const dr = document.createElement('tr'); dr.className = 'det';
-  const c = td('Carregando itens e documentos…', 'det-c'); c.colSpan = 9; dr.append(c); tr.after(dr);
-  const base = `${PNCP}/orgaos/${r.cnpj}/compras/${r.ano}/${r.seq}`;
-  try {
-    const [itens, arqs] = await Promise.all([getJson(`${base}/itens?pagina=1&tamanhoPagina=50`), getJson(`${base}/arquivos`)]);
-    c.replaceChildren(montarDetalhes(itens || [], arqs || []));
-  } catch (e) {
-    c.textContent = 'Falha ao carregar detalhes: ' + e.message;
-  }
-}
-
-function exportarCsv() {
-  const cols = ['id','orgao','cnpj','esfera','uf','municipio','unidade','modalidade','objeto','valorEstimado','valorHomologado','situacao','publicacao','abertura','encerramento','linkPncp','linkOrigem'];
-  baixarCsv(`pncp_${state.tipo}_p${state.pagina}.csv`, cols, filtradas());
-}
-
-function baixarCsv(nome, cols, rows) {
-  const esc = (v) => { const s = v === null || v === undefined ? '' : String(v).replace(/\r?\n/g, ' '); return /[;"]/.test(s) ? '"' + s.replaceAll('"', '""') + '"' : s; };
-  const linhas = [cols.join(';'), ...rows.map((r) => cols.map((c) => esc(r[c])).join(';'))];
-  const blob = new Blob(['\ufeff' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = nome; a.click(); URL.revokeObjectURL(a.href);
-}
-
-if (restaurarUrl()) buscar();
-else { state.tipo = 'cache'; configurarAba(); buscar(); }
-</script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

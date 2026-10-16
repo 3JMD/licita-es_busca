@@ -9,18 +9,38 @@ permissions:
 jobs:
   alertas:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
       - run: node scripts/alertas.test.mjs
-      - run: node scripts/alertas.mjs
-        env:
-          GH_TOKEN: ${{ github.token }}
-      - name: Publicar cache dos destaques
+      - name: Alertas e cache de destaques
+        run: node scripts/alertas.mjs
+      - name: Cache de preços
+        continue-on-error: true # o cache só fica mais velho; não derruba os alertas
+        run: node scripts/precos.mjs
+      - name: Publicar caches
+        if: ${{ !cancelled() }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/destaques.json
-          git diff --cached --quiet || (git commit -m "chore: atualiza cache de destaques" && git push)
+          git add data
+          git diff --cached --quiet || (git commit -m "chore: atualiza caches de destaques e preços" && git push)
+      - name: Avisar falha
+        if: failure()
+        run: |
+          gh label create falha-alertas --color B60205 --force
+          if [ "$(gh issue list --label falha-alertas --state open --json number --jq length)" = "0" ]; then
+            gh issue create --label falha-alertas --title "Falha na Action de alertas" \
+              --body "A execução falhou: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Sem ela o cache do site fica desatualizado e os alertas não saem."
+          fi
+      - name: Fechar avisos de falha
+        if: success()
+        run: |
+          for n in $(gh issue list --label falha-alertas --state open --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Execução voltou a funcionar."
+          done

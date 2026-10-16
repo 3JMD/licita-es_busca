@@ -7,20 +7,22 @@ Página simples para consultar a API pública do PNCP (Portal Nacional de Contra
 
 - **Busca por palavra-chave**: procura no texto dos editais de todo o PNCP (busca do próprio portal, direto do navegador).
 
-Filtros: UF, modalidade, tamanho de página; município, valor mín./máx. e texto livre (na página atual). O botão **Detalhes** mostra itens e documentos do edital. A busca fica na URL (compartilhável). Exporta a página atual em CSV (separador `;`, abre direto no Excel).
+Filtros: UF, modalidade, tamanho de página; município, valor mín./máx., texto livre e "só registro de preços (SRP)" (na página atual). Os cabeçalhos Valor, Publicação e Encerramento ordenam a tabela; prazos de menos de 3 dias aparecem em vermelho. O botão **Detalhes** mostra itens (com o benefício ME/EPP de cada um) e documentos do edital. ☆/★ salva o edital nos **Favoritos**. A busca fica na URL (compartilhável). Na aba de palavra-chave há atalhos do pacote Saúde. Exporta a página atual em CSV (separador `;`, abre direto no Excel).
 
 ## Estrutura
 
 ```
-index.html      # front-end
-normaliza.mjs   # converte item da busca do PNCP (usado pelo site e pela Action)
-data/destaques.json  # cache diário gerado pela Action (HTML + JS puro, sem dependências)
-alerts.json     # termos monitorados pelos alertas
-scripts/alertas.mjs  # consulta diária e abre uma Issue com o que saiu de novo
-.github/workflows/alertas.yml  # agenda (08:00 BRT) e roda o script
-api/pncp.js     # função serverless da Vercel que chama o PNCP (evita CORS)
-vercel.json     # timeout da função (30 s)
-package.json
+index.html            # markup e estilos
+app.js                # abas, filtros, tabela, favoritos, monitoramentos
+preco.js              # aba Preço de referência (item único, lista e cache)
+dom.js, favoritos.js  # utilidades de DOM/formatação e armazenamento de favoritos
+lib/pncp.mjs          # acesso à API do PNCP, normalização e cálculo de preços (site e Actions)
+api/pncp.js           # função serverless da Vercel que chama o PNCP (abas Abertas/Publicadas)
+alerts.json           # termos dos alertas e do cache de destaques
+itens.json            # itens do cache de preços (até 10)
+scripts/              # alertas.mjs, precos.mjs e testes (node scripts/alertas.test.mjs)
+data/                 # destaques.json e precos.json, gerados pela Action
+.github/workflows/    # Action diária (08:00 BRT)
 ```
 
 ## Deploy
@@ -54,10 +56,10 @@ Aba onde cada pessoa cadastra até 5 termos (com UF opcional). Ficam salvos no p
 
 ## Preço de referência
 
-Digite um item (ex.: "dipirona sódica 500 mg") e o site busca as 15 atas de registro de preços mais recentes, abre os itens homologados que contêm todas as palavras e lista valor unitário, quantidade, fornecedor e órgão, com mínimo/mediana/média/máximo **por unidade de medida**. Exporta CSV. Limitações: só vê os 50 primeiros itens de cada compra; a busca por texto é aproximada, então confira descrição e apresentação antes de usar o preço; leva alguns segundos porque cada ata exige várias chamadas ao PNCP.
+Digite um item (ex.: "dipirona sódica 500 mg") e o site busca as 15 atas de registro de preços mais recentes, abre os itens homologados que contêm todas as palavras e lista valor unitário, quantidade, fornecedor e órgão, com mínimo/mediana/média/máximo **por unidade de medida**. Exporta CSV. Itens de `itens.json` abrem do cache diário (`data/precos.json`); "Atualizar ao vivo" consulta o PNCP na hora. Há também a pesquisa **em lista** (até 20 itens, um por linha) com planilha de mediana e menor preço por item. Limitações: só vê os 50 primeiros itens de cada compra; a busca por texto é aproximada, então confira descrição e apresentação antes de usar o preço; leva alguns segundos porque cada ata exige várias chamadas ao PNCP.
 
 ## Alertas diários
 
-Edite `alerts.json` (`termo` e, opcional, `ufs`). Todo dia às 08:00 (Brasília) uma GitHub Action busca editais **abertos publicados nas últimas 25 h** e abre uma Issue com a lista; o GitHub avisa por e-mail quem acompanha o repositório (Watch → All Activity ou Issues). Rodar na hora: aba Actions → *Alertas de licitações* → Run workflow. Local: `DRY_RUN=1 node scripts/alertas.mjs`; teste: `node scripts/alertas.test.mjs`.
+Edite `alerts.json` (`termo` e, opcional, `ufs`). Todo dia às 08:00 (Brasília) uma GitHub Action busca editais **abertos publicados nas últimas 25 h** e abre uma Issue com a lista; o GitHub avisa por e-mail quem acompanha o repositório (Watch → All Activity ou Issues). Rodar na hora: aba Actions → *Alertas de licitações* → Run workflow. A Issue agrupa por UF, destaca o que encerra em menos de 5 dias e fecha a Issue anterior. Se a Action falhar, ela abre uma Issue "Falha na Action de alertas" (e a fecha quando voltar a funcionar). Local: `DRY_RUN=1 node scripts/alertas.mjs`; teste: `node scripts/alertas.test.mjs`.
 
 A busca do PNCP é aproximada: termos genéricos trazem resultado vagamente relacionado. A descrição da busca vem truncada pelo PNCP. O valor estimado quase nunca vem na busca por palavra-chave, então o filtro de valor esconde esses registros.
