@@ -46,6 +46,10 @@ Para rodar localmente: `npx vercel dev` (abrir `index.html` direto no navegador 
 
 Aba onde cada pessoa cadastra até 5 termos (com UF opcional). Ficam salvos no próprio navegador (`localStorage`), sem login nem servidor. Ao abrir a aba, o site consulta o PNCP e marca "Novo" o que foi publicado desde a última visita. Não avisa quem não abrir o site; para aviso por e-mail use os alertas abaixo.
 
+## Preço de referência
+
+Digite um item (ex.: "dipirona sódica 500 mg") e o site busca as 15 atas de registro de preços mais recentes, abre os itens homologados que contêm todas as palavras e lista valor unitário, quantidade, fornecedor e órgão, com mínimo/mediana/média/máximo **por unidade de medida**. Exporta CSV. Limitações: só vê os 50 primeiros itens de cada compra; a busca por texto é aproximada, então confira descrição e apresentação antes de usar o preço; leva alguns segundos porque cada ata exige várias chamadas ao PNCP.
+
 ## Alertas diários
 
 Edite `alerts.json` (`termo` e, opcional, `ufs`). Todo dia às 08:00 (Brasília) uma GitHub Action busca editais **abertos publicados nas últimas 25 h** e abre uma Issue com a lista; o GitHub avisa por e-mail quem acompanha o repositório (Watch → All Activity ou Issues). Rodar na hora: aba Actions → *Alertas de licitações* → Run workflow. Local: `DRY_RUN=1 node scripts/alertas.mjs`; teste: `node scripts/alertas.test.mjs`.

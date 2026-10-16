@@ -49,6 +49,7 @@
   .btn.mini{padding:2px 8px;font-size:12px}
   .mlista{grid-column:1/-1;list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
   .mlista li{display:flex;align-items:center;gap:6px;border:1px solid var(--bd);border-radius:999px;padding:3px 4px 3px 12px;background:var(--bg)}
+  #pSum{white-space:pre-line;margin:4px 0 10px}
   .vazio{padding:28px;text-align:center;color:var(--mut)}
 </style>
 </head>
@@ -63,6 +64,7 @@
     <button type="button" data-tipo="publicadas">Publicadas no período / encerradas</button>
     <button type="button" data-tipo="busca">Busca por palavra-chave</button>
     <button type="button" data-tipo="monitor">Meus monitoramentos</button>
+    <button type="button" data-tipo="preco">Preço de referência</button>
   </div>
 
   <section id="mon" hidden>
@@ -77,6 +79,30 @@
       <p class="hint" id="mHint"></p>
       <ul id="mLista" class="mlista"></ul>
     </form>
+  </section>
+
+  <section id="pre" hidden>
+    <form id="fp">
+      <label>Item (descrição)
+        <input id="pTermo" required maxlength="80" placeholder="ex.: dipirona sódica 500 mg">
+      </label>
+      <label>UF
+        <select id="pUf"><option value="">Todas</option></select>
+      </label>
+      <button class="btn" id="pBtn">Pesquisar preços</button>
+      <p class="hint">Busca atas de registro de preços e lista o <b>valor unitário homologado</b>, o fornecedor e o órgão dos itens que contêm todas as palavras digitadas (até 15 atas mais recentes). Confira sempre a unidade/apresentação: "caixa" e "ampola" não se comparam.</p>
+    </form>
+    <div class="bar">
+      <span class="status" id="pStatus"></span>
+      <button type="button" class="btn sec" id="pCsv" disabled>Exportar CSV</button>
+    </div>
+    <p id="pSum" class="status"></p>
+    <div class="wrap">
+      <table>
+        <thead><tr><th>Item</th><th>Un.</th><th>Valor unit.</th><th>Qtde</th><th>Fornecedor</th><th>Órgão / UF</th><th>Data</th><th>Link</th></tr></thead>
+        <tbody id="pTb"></tbody>
+      </table>
+    </div>
   </section>
 
   <form id="f">
@@ -135,7 +161,7 @@
 
   <div class="aviso" id="aviso"></div>
 
-  <div class="bar">
+  <div class="bar" id="barra">
     <span class="status" id="status">Defina os filtros e clique em Buscar.</span>
     <div class="pag">
       <button type="button" class="btn sec" id="csv" disabled>Exportar CSV</button>
@@ -145,7 +171,7 @@
     </div>
   </div>
 
-  <div class="wrap">
+  <div class="wrap" id="tabela">
     <table>
       <thead><tr>
         <th>Órgão</th><th>UF / Município</th><th>Modalidade</th><th>Objeto</th>
@@ -160,11 +186,11 @@
 const UFS = 'AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO'.split(' ');
 const $ = (id) => document.getElementById(id);
 const ufSel = $('uf');
-UFS.forEach((u) => { ufSel.add(new Option(u, u)); $('mUf').add(new Option(u, u)); });
+UFS.forEach((u) => { ufSel.add(new Option(u, u)); $('mUf').add(new Option(u, u)); $('pUf').add(new Option(u, u)); });
 
 const SEARCH = 'https://pncp.gov.br/api/search/';
 const PNCP = 'https://pncp.gov.br/api/pncp/v1';
-const CAMPOS_URL = ['dataInicial', 'dataFinal', 'uf', 'modalidade', 'tamanhoPagina', 'texto', 'q', 'situacao', 'municipio', 'valorMin', 'valorMax'];
+const CAMPOS_URL = ['dataInicial', 'dataFinal', 'uf', 'modalidade', 'tamanhoPagina', 'texto', 'q', 'situacao', 'municipio', 'pTermo', 'pUf', 'valorMin', 'valorMax'];
 const MAX_MONITORES = 5;
 const CHAVE_MON = 'pncp.monitores';
 const state = { tipo: 'abertas', pagina: 1, totalPaginas: 0, rows: [] };
@@ -244,6 +270,97 @@ async function verificarMonitores() {
   return { data, totalRegistros: data.length, totalPaginas: 1, avisos };
 }
 
+// Preço de referência: ata -> itens da compra -> resultados (valor unitário homologado).
+const ATAS_POR_BUSCA = 15;
+const ITENS_POR_ATA = 50;
+const MAX_ITENS_POR_ATA = 5;
+const PARALELO = 3;
+let precos = [];
+
+const norm = (t) => t.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+const casa = (descricao, palavras) => { const d = norm(descricao || ''); return palavras.every((w) => d.includes(w)); };
+const fmtUnit = (v) => v == null ? '—' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+
+function resumo(valores) {
+  const s = [...valores].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return { n: s.length, min: s[0], max: s[s.length - 1], mediana: s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2, media: s.reduce((a, b) => a + b, 0) / s.length };
+}
+
+async function emLotes(lista, n, fn) {
+  let i = 0;
+  await Promise.all(Array.from({ length: n }, async () => { while (i < lista.length) await fn(lista[i++]); }));
+}
+
+async function precosDaAta(a, palavras, juntar) {
+  const [, , cnpj, ano, seq] = a.item_url.split('/');
+  const base = `${PNCP}/orgaos/${cnpj}/compras/${ano}/${seq}`;
+  const itens = (await getJson(`${base}/itens?pagina=1&tamanhoPagina=${ITENS_POR_ATA}`)) || [];
+  const alvo = itens.filter((i) => i.temResultado && casa(i.descricao, palavras)).slice(0, MAX_ITENS_POR_ATA);
+  for (const i of alvo) {
+    const res = (await getJson(`${base}/itens/${i.numeroItem}/resultados`)) || [];
+    res.filter((r) => !r.dataCancelamento && r.valorUnitarioHomologado > 0).forEach((r) => juntar({
+      item: i.descricao, unidade: i.unidadeMedida, valorUnitario: r.valorUnitarioHomologado, quantidade: r.quantidadeHomologada,
+      fornecedor: r.nomeRazaoSocialFornecedor, orgao: a.orgao_nome, uf: a.uf, municipio: a.municipio_nome,
+      data: r.dataResultado, link: `https://pncp.gov.br/app/editais/${cnpj}/${ano}/${seq}`,
+    }));
+  }
+}
+
+function renderPreco() {
+  const tb = $('pTb'); tb.replaceChildren();
+  for (const r of precos) {
+    const tr = document.createElement('tr');
+    const lk = document.createElement('td'); if (urlSegura(r.link)) lk.append(link(r.link, 'PNCP'));
+    tr.append(td(r.item, 'obj'), td(r.unidade), td(fmtUnit(r.valorUnitario), 'num'), td(r.quantidade?.toLocaleString('pt-BR'), 'num'),
+      td(r.fornecedor), td(`${r.orgao || ''} (${r.municipio || ''}/${r.uf || ''})`), td(fmtData(r.data), 'dt'), lk);
+    tb.append(tr);
+  }
+  if (!precos.length) { $('pSum').textContent = ''; $('pCsv').disabled = true; return; }
+  // Unidades diferentes (comprimido, frasco, ampola…) não se comparam: um resumo por unidade.
+  const grupos = Object.groupBy(precos, (r) => norm((r.unidade || 'sem unidade').trim()));
+  $('pSum').textContent = Object.values(grupos).sort((a, b) => b.length - a.length).map((g) => {
+    const x = resumo(g.map((r) => r.valorUnitario));
+    return `${g[0].unidade || 'sem unidade'}: ${x.n} ${x.n === 1 ? 'preço' : 'preços'} — mín. ${fmtUnit(x.min)} · mediana ${fmtUnit(x.mediana)} · média ${fmtUnit(x.media)} · máx. ${fmtUnit(x.max)}`;
+  }).join('\n');
+  $('pCsv').disabled = false;
+}
+
+async function pesquisarPreco() {
+  const termo = $('pTermo').value.trim();
+  if (!termo) return;
+  salvarUrl();
+  const palavras = norm(termo).split(/\s+/).filter(Boolean);
+  precos = []; renderPreco();
+  $('pBtn').disabled = true; $('aviso').style.display = 'none';
+  $('pStatus').textContent = 'Buscando atas…';
+  const p = new URLSearchParams({ q: termo, tipos_documento: 'ata', ordenacao: '-data', pagina: 1, tam_pagina: ATAS_POR_BUSCA });
+  if ($('pUf').value) p.set('ufs', $('pUf').value);
+  try {
+    // Várias atas podem vir da mesma compra; consultar a compra uma vez só.
+    const compras = new Set();
+    const atas = ((await getJson(SEARCH + '?' + p)).items || []).filter((a) => {
+      const compra = a.item_url.split('/').slice(2, 5).join('/');
+      if (a.cancelado || compras.has(compra)) return false;
+      compras.add(compra); return true;
+    });
+    let feitas = 0; let falhas = 0;
+    await emLotes(atas, PARALELO, async (a) => {
+      try { await precosDaAta(a, palavras, (r) => { precos = [...precos, r]; renderPreco(); }); } catch { falhas++; }
+      feitas++; $('pStatus').textContent = `Consultando atas… ${feitas} de ${atas.length}`;
+    });
+    precos = [...precos].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+    renderPreco();
+    $('pStatus').textContent = `${atas.length} atas consultadas${falhas ? `, ${falhas} falharam` : ''}.`
+      + (precos.length ? '' : ' Nenhum item homologado com todas as palavras; tente menos palavras.');
+  } catch (err) {
+    $('pStatus').textContent = '';
+    $('aviso').textContent = 'Falha na consulta: ' + err.message; $('aviso').style.display = 'block';
+  } finally {
+    $('pBtn').disabled = false;
+  }
+}
+
 function salvarUrl() {
   const p = new URLSearchParams({ tipo: state.tipo, pagina: state.pagina });
   CAMPOS_URL.forEach((c) => { if ($(c).value) p.set(c, $(c).value); });
@@ -253,7 +370,7 @@ function salvarUrl() {
 function restaurarUrl() {
   const p = new URLSearchParams(location.search);
   if (!p.has('tipo')) return false;
-  state.tipo = ['abertas', 'publicadas', 'busca', 'monitor'].includes(p.get('tipo')) ? p.get('tipo') : 'abertas';
+  state.tipo = ['abertas', 'publicadas', 'busca', 'monitor', 'preco'].includes(p.get('tipo')) ? p.get('tipo') : 'abertas';
   configurarAba();
   CAMPOS_URL.forEach((c) => { if (p.has(c)) $(c).value = p.get(c); });
   state.pagina = Math.max(1, parseInt(p.get('pagina'), 10) || 1);
@@ -271,8 +388,12 @@ function configurarAba() {
   const pub = state.tipo === 'publicadas';
   const busca = state.tipo === 'busca';
   const mon = state.tipo === 'monitor';
-  $('f').hidden = mon;
+  const preco = state.tipo === 'preco';
+  $('f').hidden = mon || preco;
   $('mon').hidden = !mon;
+  $('pre').hidden = !preco;
+  $('barra').hidden = preco;
+  $('tabela').hidden = preco;
   if (mon) renderMon();
   $('lIni').hidden = !pub;
   $('lEnc').hidden = !pub;
@@ -313,6 +434,9 @@ $('fm').addEventListener('submit', (e) => {
   $('mTermo').value = '';
   renderMon(); buscar();
 });
+$('fp').addEventListener('submit', (e) => { e.preventDefault(); pesquisarPreco(); });
+$('pCsv').addEventListener('click', () => baixarCsv('pncp_precos.csv',
+  ['item', 'unidade', 'valorUnitario', 'quantidade', 'fornecedor', 'orgao', 'municipio', 'uf', 'data', 'link'], precos));
 $('f').addEventListener('submit', (e) => { e.preventDefault(); state.pagina = 1; buscar(); });
 $('ant').addEventListener('click', () => { if (state.pagina > 1) { state.pagina--; buscar(); } });
 $('prox').addEventListener('click', () => { if (state.pagina < state.totalPaginas) { state.pagina++; buscar(); } });
@@ -349,6 +473,7 @@ async function buscarProxy() {
 }
 
 async function buscar() {
+  if (state.tipo === 'preco') return pesquisarPreco();
   salvarUrl();
   $('buscar').disabled = true;
   $('status').textContent = 'Consultando o PNCP…';
@@ -473,11 +598,15 @@ async function alternarDetalhes(tr, r) {
 
 function exportarCsv() {
   const cols = ['id','orgao','cnpj','esfera','uf','municipio','unidade','modalidade','objeto','valorEstimado','valorHomologado','situacao','publicacao','abertura','encerramento','linkPncp','linkOrigem'];
+  baixarCsv(`pncp_${state.tipo}_p${state.pagina}.csv`, cols, filtradas());
+}
+
+function baixarCsv(nome, cols, rows) {
   const esc = (v) => { const s = v === null || v === undefined ? '' : String(v).replace(/\r?\n/g, ' '); return /[;"]/.test(s) ? '"' + s.replaceAll('"', '""') + '"' : s; };
-  const linhas = [cols.join(';'), ...filtradas().map((r) => cols.map((c) => esc(r[c])).join(';'))];
-  const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const linhas = [cols.join(';'), ...rows.map((r) => cols.map((c) => esc(r[c])).join(';'))];
+  const blob = new Blob(['\ufeff' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = `pncp_${state.tipo}_p${state.pagina}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  a.download = nome; a.click(); URL.revokeObjectURL(a.href);
 }
 
 configurarAba();
