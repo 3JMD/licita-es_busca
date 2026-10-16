@@ -31,6 +31,8 @@ function enxugar(d) {
   const u = d.unidadeOrgao || {};
   return {
     id: d.numeroControlePNCP,
+    ano: d.anoCompra,
+    seq: d.sequencialCompra,
     orgao: o.razaoSocial,
     cnpj: o.cnpj,
     esfera: o.esferaId, // F, E, M, D (distrital), N (não se aplica)

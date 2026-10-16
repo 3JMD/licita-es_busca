@@ -41,6 +41,11 @@
   .tag.neu{background:var(--neubg);color:var(--neu)}
   a{color:var(--pri)}
   .pag{display:flex;gap:8px;align-items:center}
+  .det-c{background:var(--bg);padding:12px 16px}
+  .det-c h3{font-size:13px;margin:8px 0 4px}
+  .det-c ul{margin:0;padding-left:18px}
+  .det-c table{min-width:0;margin-top:4px}
+  .btn.mini{padding:2px 8px;font-size:12px}
   .vazio{padding:28px;text-align:center;color:var(--mut)}
 </style>
 </head>
@@ -53,9 +58,16 @@
   <div class="tabs" role="tablist">
     <button type="button" data-tipo="abertas" class="on">Abertas (recebendo propostas)</button>
     <button type="button" data-tipo="publicadas">Publicadas no período / encerradas</button>
+    <button type="button" data-tipo="busca">Busca por palavra-chave</button>
   </div>
 
   <form id="f">
+    <label id="lQ">Palavra-chave
+      <input type="search" id="q" placeholder="ex.: oxigênio, luvas, OPME">
+    </label>
+    <label id="lSt">Situação
+      <select id="situacao"><option value="recebendo_proposta">Abertas (recebendo propostas)</option><option value="encerrada">Encerradas</option></select>
+    </label>
     <label id="lIni">Publicadas de
       <input type="date" id="dataInicial">
     </label>
@@ -88,6 +100,15 @@
     </label>
     <label>Filtrar texto (nesta página)
       <input type="search" id="texto" placeholder="órgão, objeto, município…">
+    </label>
+    <label>Município (nesta página)
+      <input type="search" id="municipio" placeholder="ex.: Niterói">
+    </label>
+    <label>Valor mín. R$ (nesta página)
+      <input type="number" id="valorMin" min="0" step="any">
+    </label>
+    <label>Valor máx. R$ (nesta página)
+      <input type="number" id="valorMax" min="0" step="any">
     </label>
     <label class="chk" id="lEnc" hidden><input type="checkbox" id="soEncerradas"> Só encerradas (nesta página)</label>
     <button class="btn" id="buscar">Buscar</button>
@@ -123,7 +144,52 @@ const $ = (id) => document.getElementById(id);
 const ufSel = $('uf');
 UFS.forEach((u) => ufSel.add(new Option(u, u)));
 
+const SEARCH = 'https://pncp.gov.br/api/search/';
+const PNCP = 'https://pncp.gov.br/api/pncp/v1';
+const CAMPOS_URL = ['dataInicial', 'dataFinal', 'uf', 'modalidade', 'tamanhoPagina', 'texto', 'q', 'situacao', 'municipio', 'valorMin', 'valorMax'];
 const state = { tipo: 'abertas', pagina: 1, totalPaginas: 0, rows: [] };
+
+// A API do PNCP derruba conexões com frequência; a nova tentativa costuma passar.
+async function getJson(url, tentativas = 4) {
+  let erro;
+  for (let i = 0; i < tentativas; i++) {
+    try {
+      const r = await fetch(url);
+      if (r.status === 204) return null;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } catch (e) {
+      erro = e;
+      await new Promise((ok) => setTimeout(ok, 600 * (i + 1)));
+    }
+  }
+  throw erro;
+}
+
+const normalizaBusca = (i) => ({
+  id: i.numero_controle_pncp, orgao: i.orgao_nome, cnpj: i.orgao_cnpj, esfera: i.esfera_id,
+  uf: i.uf, municipio: i.municipio_nome, unidade: i.unidade_nome, modalidade: i.modalidade_licitacao_nome,
+  objeto: i.description, valorEstimado: i.valor_global, valorHomologado: null, situacao: i.situacao_nome,
+  publicacao: i.data_publicacao_pncp, abertura: i.data_inicio_vigencia, encerramento: i.data_fim_vigencia,
+  linkOrigem: null, linkPncp: 'https://pncp.gov.br/app/editais' + i.item_url.replace(/^\/compras/, ''),
+  ano: i.ano, seq: i.numero_sequencial,
+});
+
+function salvarUrl() {
+  const p = new URLSearchParams({ tipo: state.tipo, pagina: state.pagina });
+  CAMPOS_URL.forEach((c) => { if ($(c).value) p.set(c, $(c).value); });
+  history.replaceState(null, '', '?' + p);
+}
+
+function restaurarUrl() {
+  const p = new URLSearchParams(location.search);
+  if (!p.has('tipo')) return false;
+  state.tipo = ['abertas', 'publicadas', 'busca'].includes(p.get('tipo')) ? p.get('tipo') : 'abertas';
+  configurarAba();
+  CAMPOS_URL.forEach((c) => { if (p.has(c)) $(c).value = p.get(c); });
+  state.pagina = Math.max(1, parseInt(p.get('pagina'), 10) || 1);
+  return true;
+}
 
 const iso = (d) => d.toISOString().slice(0, 10);
 const addDias = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d; };
@@ -134,14 +200,22 @@ const fmtValor = (v) => (v === null || v === undefined || v === 0) ? '—'
 
 function configurarAba() {
   const pub = state.tipo === 'publicadas';
+  const busca = state.tipo === 'busca';
   $('lIni').hidden = !pub;
   $('lEnc').hidden = !pub;
+  $('lFim').hidden = busca;
+  $('lQ').hidden = !busca;
+  $('lSt').hidden = !busca;
+  $('q').required = busca;
+  $('dataFinal').required = !busca;
   $('dataInicial').required = pub;
   $('lFim').firstChild.textContent = pub ? 'Publicadas até ' : 'Encerram até ';
   if (pub) {
     $('dataInicial').value = iso(addDias(-7));
     $('dataFinal').value = iso(new Date());
     $('hint').textContent = 'Lista o que foi publicado no PNCP no período (abertas e encerradas). Sem modalidade, consulta as 13 em paralelo e junta a página N de cada uma; períodos longos ficam lentos.';
+  } else if (busca) {
+    $('hint').textContent = 'Procura a palavra no texto dos editais de todo o PNCP (busca do próprio portal), mais recentes primeiro. A descrição vem truncada pelo PNCP; use "Detalhes" para ver itens e documentos.';
   } else {
     $('dataFinal').value = iso(addDias(30));
     $('hint').textContent = 'Lista contratações com recebimento de propostas em aberto e encerramento até a data escolhida.';
@@ -157,11 +231,23 @@ document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('cli
 $('f').addEventListener('submit', (e) => { e.preventDefault(); state.pagina = 1; buscar(); });
 $('ant').addEventListener('click', () => { if (state.pagina > 1) { state.pagina--; buscar(); } });
 $('prox').addEventListener('click', () => { if (state.pagina < state.totalPaginas) { state.pagina++; buscar(); } });
-$('texto').addEventListener('input', render);
+['texto', 'municipio', 'valorMin', 'valorMax'].forEach((c) => $(c).addEventListener('input', render));
 $('soEncerradas').addEventListener('change', render);
 $('csv').addEventListener('click', exportarCsv);
 
-async function buscar() {
+async function buscarTexto() {
+  const tam = Number($('tamanhoPagina').value);
+  const p = new URLSearchParams({
+    q: $('q').value.trim(), tipos_documento: 'edital', status: $('situacao').value,
+    ordenacao: '-data', pagina: state.pagina, tam_pagina: tam,
+  });
+  if (ufSel.value) p.set('ufs', ufSel.value);
+  if ($('modalidade').value) p.set('modalidades', $('modalidade').value);
+  const j = await getJson(SEARCH + '?' + p);
+  return { data: (j.items || []).map(normalizaBusca), totalRegistros: j.total || 0, totalPaginas: Math.ceil((j.total || 0) / tam), avisos: [] };
+}
+
+async function buscarProxy() {
   const p = new URLSearchParams({
     tipo: state.tipo,
     dataFinal: paraApi($('dataFinal').value),
@@ -171,14 +257,19 @@ async function buscar() {
   if (state.tipo === 'publicadas') p.set('dataInicial', paraApi($('dataInicial').value));
   if (ufSel.value) p.set('uf', ufSel.value);
   if ($('modalidade').value) p.set('modalidade', $('modalidade').value);
+  const r = await fetch('/api/pncp?' + p);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.erro || 'Erro ' + r.status);
+  return j;
+}
 
+async function buscar() {
+  salvarUrl();
   $('buscar').disabled = true;
   $('status').textContent = 'Consultando o PNCP…';
   $('aviso').style.display = 'none';
   try {
-    const r = await fetch('/api/pncp?' + p);
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.erro || 'Erro ' + r.status);
+    const j = await (state.tipo === 'busca' ? buscarTexto() : buscarProxy());
     state.rows = j.data;
     state.totalPaginas = j.totalPaginas;
     $('status').textContent = `${j.totalRegistros.toLocaleString('pt-BR')} registros no PNCP`;
@@ -207,8 +298,15 @@ function statusDe(row) {
 function filtradas() {
   const q = $('texto').value.trim().toLowerCase();
   const soEnc = state.tipo === 'publicadas' && $('soEncerradas').checked;
+  const mun = $('municipio').value.trim().toLowerCase();
+  const vMin = $('valorMin').value === '' ? null : Number($('valorMin').value);
+  const vMax = $('valorMax').value === '' ? null : Number($('valorMax').value);
   return state.rows.filter((r) => {
     if (soEnc && statusDe(r).t !== 'Encerrada') return false;
+    if (mun && !(r.municipio || '').toLowerCase().includes(mun)) return false;
+    if ((vMin !== null || vMax !== null) && !r.valorEstimado) return false;
+    if (vMin !== null && r.valorEstimado < vMin) return false;
+    if (vMax !== null && r.valorEstimado > vMax) return false;
     if (!q) return true;
     return [r.orgao, r.objeto, r.municipio, r.unidade, r.modalidade].join(' ').toLowerCase().includes(q);
   });
@@ -231,6 +329,13 @@ function render() {
     const lk = document.createElement('td');
     if (urlSegura(r.linkPncp)) lk.append(link(r.linkPncp, 'PNCP'));
     if (urlSegura(r.linkOrigem)) { if (lk.childNodes.length) lk.append(' · '); lk.append(link(r.linkOrigem, 'Origem')); }
+    if (r.cnpj && r.ano && r.seq) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn sec mini'; b.textContent = 'Detalhes';
+      b.addEventListener('click', () => alternarDetalhes(tr, r));
+      if (lk.childNodes.length) lk.append(' · ');
+      lk.append(b);
+    }
     tr.append(org, td(`${r.uf || ''} / ${r.municipio || ''}`), td(r.modalidade), td(r.objeto, 'obj'),
       td(fmtValor(r.valorEstimado), 'num'), td(fmtData(r.publicacao), 'dt'), td(fmtData(r.encerramento), 'dt'), stc, lk);
     tb.append(tr);
@@ -239,6 +344,42 @@ function render() {
   $('ant').disabled = state.pagina <= 1;
   $('prox').disabled = state.pagina >= state.totalPaginas;
   $('csv').disabled = !rows.length;
+}
+
+function montarDetalhes(itens, arquivos) {
+  const box = document.createElement('div');
+  const h = (t) => { const e = document.createElement('h3'); e.textContent = t; return e; };
+  box.append(h('Documentos'));
+  const ul = document.createElement('ul');
+  arquivos.filter((a) => a.statusAtivo && urlSegura(a.url)).forEach((a) => {
+    const li = document.createElement('li');
+    li.append(link(a.url, a.titulo || 'arquivo'), ` (${a.tipoDocumentoNome || 'documento'})`);
+    ul.append(li);
+  });
+  box.append(ul.childElementCount ? ul : Object.assign(document.createElement('span'), { textContent: 'Nenhum documento publicado.' }));
+  box.append(h(itens.length >= 50 ? 'Itens (primeiros 50)' : `Itens (${itens.length})`));
+  const t = document.createElement('table');
+  const cab = t.createTHead().insertRow();
+  ['Nº', 'Descrição', 'Qtde', 'Un.', 'Valor unit.', 'Total'].forEach((x) => { const th = document.createElement('th'); th.textContent = x; cab.append(th); });
+  const tb = t.createTBody();
+  itens.forEach((i) => tb.insertRow().append(td(i.numeroItem), td(i.descricao), td(i.quantidade, 'num'), td(i.unidadeMedida),
+    td(fmtValor(i.valorUnitarioEstimado), 'num'), td(fmtValor(i.valorTotal), 'num')));
+  box.append(t);
+  return box;
+}
+
+async function alternarDetalhes(tr, r) {
+  const prox = tr.nextElementSibling;
+  if (prox?.classList.contains('det')) { prox.remove(); return; }
+  const dr = document.createElement('tr'); dr.className = 'det';
+  const c = td('Carregando itens e documentos…', 'det-c'); c.colSpan = 9; dr.append(c); tr.after(dr);
+  const base = `${PNCP}/orgaos/${r.cnpj}/compras/${r.ano}/${r.seq}`;
+  try {
+    const [itens, arqs] = await Promise.all([getJson(`${base}/itens?pagina=1&tamanhoPagina=50`), getJson(`${base}/arquivos`)]);
+    c.replaceChildren(montarDetalhes(itens || [], arqs || []));
+  } catch (e) {
+    c.textContent = 'Falha ao carregar detalhes: ' + e.message;
+  }
 }
 
 function exportarCsv() {
@@ -251,6 +392,7 @@ function exportarCsv() {
 }
 
 configurarAba();
+if (restaurarUrl()) buscar();
 </script>
 </body>
 </html>
