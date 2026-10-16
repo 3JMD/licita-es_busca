@@ -1,0 +1,8 @@
+{
+  "name": "pncp-licitacoes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Consulta de licitações abertas e publicadas no PNCP",
+  "engines": { "node": ">=18" }
+}

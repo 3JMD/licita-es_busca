@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Licitações PNCP</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--tx:#1d2330;--mut:#667085;--bd:#e3e6eb;--pri:#1f5eff;--ok:#0f7b45;--okbg:#e5f6ec;--no:#9a3412;--nobg:#fdeee5;--neu:#475467;--neubg:#eef0f3}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1218;--card:#171b23;--tx:#e6e8ec;--mut:#98a2b3;--bd:#2a303b;--pri:#6d95ff;--ok:#5fd39a;--okbg:#12301f;--no:#f4a77c;--nobg:#3a1f12;--neu:#c0c6d0;--neubg:#252a33}}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx)}
+  header{padding:20px 16px 8px;max-width:1280px;margin:auto}
+  h1{font-size:20px;margin:0 0 4px}
+  header p{margin:0;color:var(--mut)}
+  main{max-width:1280px;margin:auto;padding:8px 16px 40px}
+  .tabs{display:flex;gap:4px;margin:12px 0}
+  .tabs button{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:8px 14px;border-radius:8px;cursor:pointer;font:inherit}
+  .tabs button.on{background:var(--pri);border-color:var(--pri);color:#fff}
+  form{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;align-items:end}
+  label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
+  input,select{font:inherit;padding:7px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx)}
+  .chk{flex-direction:row;align-items:center;gap:6px;font-size:13px;color:var(--tx)}
+  .btn{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid var(--pri);background:var(--pri);color:#fff;cursor:pointer}
+  .btn.sec{background:transparent;color:var(--pri)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .hint{grid-column:1/-1;font-size:12px;color:var(--mut);margin:0}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:14px 0 8px}
+  .status{color:var(--mut)}
+  .aviso{background:var(--nobg);color:var(--no);padding:8px 12px;border-radius:8px;margin:8px 0;display:none}
+  .wrap{overflow-x:auto;background:var(--card);border:1px solid var(--bd);border-radius:10px}
+  table{width:100%;border-collapse:collapse;min-width:980px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
+  th{font-size:12px;color:var(--mut);font-weight:600;position:sticky;top:0;background:var(--card)}
+  td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  td.dt{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .obj{max-width:440px}
+  .org small{display:block;color:var(--mut)}
+  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;white-space:nowrap}
+  .tag.ok{background:var(--okbg);color:var(--ok)}
+  .tag.no{background:var(--nobg);color:var(--no)}
+  .tag.neu{background:var(--neubg);color:var(--neu)}
+  a{color:var(--pri)}
+  .pag{display:flex;gap:8px;align-items:center}
+  .vazio{padding:28px;text-align:center;color:var(--mut)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Licitações no PNCP</h1>
+  <p>Consulta à API pública do Portal Nacional de Contratações Públicas, para todas as áreas e esferas.</p>
+</header>
+<main>
+  <div class="tabs" role="tablist">
+    <button type="button" data-tipo="abertas" class="on">Abertas (recebendo propostas)</button>
+    <button type="button" data-tipo="publicadas">Publicadas no período / encerradas</button>
+  </div>
+
+  <form id="f">
+    <label id="lIni">Publicadas de
+      <input type="date" id="dataInicial">
+    </label>
+    <label id="lFim">Encerram até
+      <input type="date" id="dataFinal" required>
+    </label>
+    <label>UF
+      <select id="uf"><option value="">Todas</option></select>
+    </label>
+    <label>Modalidade
+      <select id="modalidade">
+        <option value="">Todas</option>
+        <option value="1">Leilão eletrônico</option>
+        <option value="2">Diálogo competitivo</option>
+        <option value="3">Concurso</option>
+        <option value="4">Concorrência eletrônica</option>
+        <option value="5">Concorrência presencial</option>
+        <option value="6">Pregão eletrônico</option>
+        <option value="7">Pregão presencial</option>
+        <option value="8">Dispensa</option>
+        <option value="9">Inexigibilidade</option>
+        <option value="10">Manifestação de interesse</option>
+        <option value="11">Pré-qualificação</option>
+        <option value="12">Credenciamento</option>
+        <option value="13">Leilão presencial</option>
+      </select>
+    </label>
+    <label>Por página
+      <select id="tamanhoPagina"><option>10</option><option selected>20</option><option>50</option></select>
+    </label>
+    <label>Filtrar texto (nesta página)
+      <input type="search" id="texto" placeholder="órgão, objeto, município…">
+    </label>
+    <label class="chk" id="lEnc" hidden><input type="checkbox" id="soEncerradas"> Só encerradas (nesta página)</label>
+    <button class="btn" id="buscar">Buscar</button>
+    <p class="hint" id="hint"></p>
+  </form>
+
+  <div class="aviso" id="aviso"></div>
+
+  <div class="bar">
+    <span class="status" id="status">Defina os filtros e clique em Buscar.</span>
+    <div class="pag">
+      <button type="button" class="btn sec" id="csv" disabled>Exportar CSV</button>
+      <button type="button" class="btn sec" id="ant" disabled>‹ Anterior</button>
+      <span id="pgInfo" class="status"></span>
+      <button type="button" class="btn sec" id="prox" disabled>Próxima ›</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <table>
+      <thead><tr>
+        <th>Órgão</th><th>UF / Município</th><th>Modalidade</th><th>Objeto</th>
+        <th>Valor estimado</th><th>Publicação</th><th>Encerramento</th><th>Status</th><th>Links</th>
+      </tr></thead>
+      <tbody id="tb"><tr><td colspan="9" class="vazio">Nenhuma consulta ainda.</td></tr></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+const UFS = 'AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO'.split(' ');
+const $ = (id) => document.getElementById(id);
+const ufSel = $('uf');
+UFS.forEach((u) => ufSel.add(new Option(u, u)));
+
+const state = { tipo: 'abertas', pagina: 1, totalPaginas: 0, rows: [] };
+
+const iso = (d) => d.toISOString().slice(0, 10);
+const addDias = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d; };
+const paraApi = (v) => v.replaceAll('-', '');
+const fmtData = (s) => s ? new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+const fmtValor = (v) => (v === null || v === undefined || v === 0) ? '—'
+  : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+function configurarAba() {
+  const pub = state.tipo === 'publicadas';
+  $('lIni').hidden = !pub;
+  $('lEnc').hidden = !pub;
+  $('dataInicial').required = pub;
+  $('lFim').firstChild.textContent = pub ? 'Publicadas até ' : 'Encerram até ';
+  if (pub) {
+    $('dataInicial').value = iso(addDias(-7));
+    $('dataFinal').value = iso(new Date());
+    $('hint').textContent = 'Lista o que foi publicado no PNCP no período (abertas e encerradas). Sem modalidade, consulta as 13 em paralelo e junta a página N de cada uma; períodos longos ficam lentos.';
+  } else {
+    $('dataFinal').value = iso(addDias(30));
+    $('hint').textContent = 'Lista contratações com recebimento de propostas em aberto e encerramento até a data escolhida.';
+  }
+  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tipo === state.tipo));
+}
+
+document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+  state.tipo = b.dataset.tipo; state.pagina = 1; state.rows = []; state.totalPaginas = 0;
+  configurarAba(); render(); $('status').textContent = 'Defina os filtros e clique em Buscar.'; $('pgInfo').textContent = '';
+}));
+
+$('f').addEventListener('submit', (e) => { e.preventDefault(); state.pagina = 1; buscar(); });
+$('ant').addEventListener('click', () => { if (state.pagina > 1) { state.pagina--; buscar(); } });
+$('prox').addEventListener('click', () => { if (state.pagina < state.totalPaginas) { state.pagina++; buscar(); } });
+$('texto').addEventListener('input', render);
+$('soEncerradas').addEventListener('change', render);
+$('csv').addEventListener('click', exportarCsv);
+
+async function buscar() {
+  const p = new URLSearchParams({
+    tipo: state.tipo,
+    dataFinal: paraApi($('dataFinal').value),
+    pagina: state.pagina,
+    tamanhoPagina: $('tamanhoPagina').value,
+  });
+  if (state.tipo === 'publicadas') p.set('dataInicial', paraApi($('dataInicial').value));
+  if (ufSel.value) p.set('uf', ufSel.value);
+  if ($('modalidade').value) p.set('modalidade', $('modalidade').value);
+
+  $('buscar').disabled = true;
+  $('status').textContent = 'Consultando o PNCP…';
+  $('aviso').style.display = 'none';
+  try {
+    const r = await fetch('/api/pncp?' + p);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.erro || 'Erro ' + r.status);
+    state.rows = j.data;
+    state.totalPaginas = j.totalPaginas;
+    $('status').textContent = `${j.totalRegistros.toLocaleString('pt-BR')} registros no PNCP`;
+    if (j.avisos && j.avisos.length) {
+      $('aviso').textContent = 'Algumas modalidades falharam e estão faltando nesta página: ' + j.avisos.join(' | ');
+      $('aviso').style.display = 'block';
+    }
+  } catch (err) {
+    state.rows = []; state.totalPaginas = 0;
+    $('status').textContent = '';
+    $('aviso').textContent = 'Falha na consulta: ' + err.message;
+    $('aviso').style.display = 'block';
+  } finally {
+    $('buscar').disabled = false;
+    render();
+  }
+}
+
+function statusDe(row) {
+  const s = (row.situacao || '').toLowerCase();
+  if (s.includes('revogada') || s.includes('anulada') || s.includes('suspensa')) return { t: row.situacao, c: 'no' };
+  if (!row.encerramento) return { t: row.situacao || '—', c: 'neu' };
+  return new Date(row.encerramento) > new Date() ? { t: 'Aberta', c: 'ok' } : { t: 'Encerrada', c: 'neu' };
+}
+
+function filtradas() {
+  const q = $('texto').value.trim().toLowerCase();
+  const soEnc = state.tipo === 'publicadas' && $('soEncerradas').checked;
+  return state.rows.filter((r) => {
+    if (soEnc && statusDe(r).t !== 'Encerrada') return false;
+    if (!q) return true;
+    return [r.orgao, r.objeto, r.municipio, r.unidade, r.modalidade].join(' ').toLowerCase().includes(q);
+  });
+}
+
+function td(text, cls) { const c = document.createElement('td'); if (cls) c.className = cls; c.textContent = text ?? '—'; return c; }
+function link(href, txt) { const a = document.createElement('a'); a.href = href; a.textContent = txt; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; }
+const urlSegura = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
+
+function render() {
+  const tb = $('tb'); tb.replaceChildren();
+  const rows = filtradas();
+  if (!rows.length) {
+    const tr = document.createElement('tr'); const c = td(state.rows.length ? 'Nenhum resultado com esse filtro nesta página.' : 'Nenhum resultado.', 'vazio'); c.colSpan = 9; tr.append(c); tb.append(tr);
+  }
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    const org = td(r.orgao, 'org'); const sm = document.createElement('small'); sm.textContent = r.unidade || ''; org.append(sm);
+    const st = statusDe(r); const stc = document.createElement('td'); const tag = document.createElement('span'); tag.className = 'tag ' + st.c; tag.textContent = st.t; stc.append(tag);
+    const lk = document.createElement('td');
+    if (urlSegura(r.linkPncp)) lk.append(link(r.linkPncp, 'PNCP'));
+    if (urlSegura(r.linkOrigem)) { if (lk.childNodes.length) lk.append(' · '); lk.append(link(r.linkOrigem, 'Origem')); }
+    tr.append(org, td(`${r.uf || ''} / ${r.municipio || ''}`), td(r.modalidade), td(r.objeto, 'obj'),
+      td(fmtValor(r.valorEstimado), 'num'), td(fmtData(r.publicacao), 'dt'), td(fmtData(r.encerramento), 'dt'), stc, lk);
+    tb.append(tr);
+  }
+  $('pgInfo').textContent = state.totalPaginas ? `Página ${state.pagina} de ${state.totalPaginas.toLocaleString('pt-BR')}` : '';
+  $('ant').disabled = state.pagina <= 1;
+  $('prox').disabled = state.pagina >= state.totalPaginas;
+  $('csv').disabled = !rows.length;
+}
+
+function exportarCsv() {
+  const cols = ['id','orgao','cnpj','esfera','uf','municipio','unidade','modalidade','objeto','valorEstimado','valorHomologado','situacao','publicacao','abertura','encerramento','linkPncp','linkOrigem'];
+  const esc = (v) => { const s = v === null || v === undefined ? '' : String(v).replace(/\r?\n/g, ' '); return /[;"]/.test(s) ? '"' + s.replaceAll('"', '""') + '"' : s; };
+  const linhas = [cols.join(';'), ...filtradas().map((r) => cols.map((c) => esc(r[c])).join(';'))];
+  const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `pncp_${state.tipo}_p${state.pagina}.csv`; a.click(); URL.revokeObjectURL(a.href);
+}
+
+configurarAba();
+</script>
+</body>
+</html>

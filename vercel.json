@@ -1,0 +1,5 @@
+{
+  "functions": {
+    "api/pncp.js": { "maxDuration": 30 }
+  }
+}
